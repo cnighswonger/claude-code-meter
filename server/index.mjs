@@ -125,10 +125,34 @@ function readAllSubmissions() {
 
 // --- Request handling ---
 
-async function readBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  return Buffer.concat(chunks).toString("utf-8");
+async function readBody(req, maxBytes = 65536) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    const timeout = setTimeout(() => {
+      req.destroy();
+      reject(new Error("Body read timeout"));
+    }, 10000); // 10s max
+
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        clearTimeout(timeout);
+        req.destroy();
+        reject(new Error("Body too large"));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => {
+      clearTimeout(timeout);
+      resolve(Buffer.concat(chunks).toString("utf-8"));
+    });
+    req.on("error", (e) => {
+      clearTimeout(timeout);
+      reject(e);
+    });
+  });
 }
 
 function json(res, status, data) {
@@ -136,11 +160,20 @@ function json(res, status, data) {
   res.end(JSON.stringify(data));
 }
 
+function csvSanitize(val) {
+  const s = String(val ?? "");
+  // Prevent CSV formula injection: prefix with ' if starts with =, +, -, @, \t, \r
+  if (/^[=+\-@\t\r]/.test(s)) return `'${s}`;
+  // Quote if contains comma, newline, or double quote
+  if (/[,"\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
 function csvFromRows(rows) {
   if (rows.length === 0) return "";
   const keys = Object.keys(rows[0]).filter((k) => !k.startsWith("_"));
-  const header = keys.join(",");
-  const lines = rows.map((r) => keys.map((k) => r[k] ?? "").join(","));
+  const header = keys.map(csvSanitize).join(",");
+  const lines = rows.map((r) => keys.map((k) => csvSanitize(r[k])).join(","));
   return [header, ...lines].join("\n");
 }
 
@@ -167,7 +200,8 @@ const server = createServer(async (req, res) => {
     if (method === "POST" && path === "/api/v1/submit") {
       const apiKey = req.headers["x-api-key"];
       const hasKey = apiKey && isValidKey(apiKey);
-      const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+      // Trust CF-Connecting-IP (set by Cloudflare, not spoofable) over X-Forwarded-For
+      const clientIp = req.headers["cf-connecting-ip"] || req.socket.remoteAddress;
 
       if (!checkRateLimit(clientIp, hasKey)) {
         return json(res, 429, { error: "Rate limit exceeded. Try again tomorrow or register an API key." });
@@ -214,22 +248,25 @@ const server = createServer(async (req, res) => {
     // GET /api/v1/dataset
     if (method === "GET" && path === "/api/v1/dataset") {
       const format = url.searchParams.get("format") || "json";
+      const limit = Math.min(parseInt(url.searchParams.get("limit") || "1000"), 10000);
       const rows = readAllSubmissions();
       const afterDate = url.searchParams.get("after");
       const modelFilter = url.searchParams.get("model");
 
       let filtered = rows;
       if (afterDate) filtered = filtered.filter((r) => r.date >= afterDate);
-      if (modelFilter) filtered = filtered.filter((r) => r.model.includes(modelFilter));
+      if (modelFilter) filtered = filtered.filter((r) => r.model?.includes(modelFilter));
+      filtered = filtered.slice(-limit); // last N rows
 
       if (format === "csv") {
         res.writeHead(200, {
           "Content-Type": "text/csv",
           "Access-Control-Allow-Origin": "*",
+          "Cache-Control": "no-store",
         });
         res.end(csvFromRows(filtered));
       } else {
-        json(res, 200, { count: filtered.length, data: filtered });
+        json(res, 200, { count: filtered.length, total: rows.length, data: filtered });
       }
       return;
     }
@@ -261,11 +298,18 @@ const server = createServer(async (req, res) => {
       });
     }
 
-    // POST /api/v1/register
+    // POST /api/v1/register — rate-limited key generation
     if (method === "POST" && path === "/api/v1/register") {
+      const clientIp = req.socket.remoteAddress; // Don't trust X-Forwarded-For for registration
+      if (!checkRateLimit(`register:${clientIp}`, false)) {
+        return json(res, 429, { error: "Key registration rate limit exceeded" });
+      }
       const key = "cm_" + randomBytes(24).toString("hex");
       const keys = loadKeys();
-      keys[key] = { created: new Date().toISOString() };
+      if (Object.keys(keys).length > 10000) {
+        return json(res, 503, { error: "Key limit reached" });
+      }
+      keys[key] = { created: new Date().toISOString(), ip_hash: createHash("sha256").update(clientIp).digest("hex").slice(0, 16) };
       try {
         saveKeys(keys);
       } catch {
