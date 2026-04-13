@@ -37,4 +37,8 @@ export const HEADERS = {
   OVERAGE: "anthropic-ratelimit-unified-overage-status",
   CLAIM: "anthropic-ratelimit-unified-representative-claim",
   FALLBACK_PCT: "anthropic-ratelimit-unified-fallback-percentage",
+  OVERAGE_UTIL: "anthropic-ratelimit-unified-overage-utilization",
+  REPRESENTATIVE_CLAIM: "anthropic-ratelimit-unified-representative-claim",
+  ORG_ID: "anthropic-organization-id",
+  OVERAGE_DISABLED_REASON: "anthropic-ratelimit-unified-overage-disabled-reason",
 };

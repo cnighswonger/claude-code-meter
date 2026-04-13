@@ -1,4 +1,5 @@
 import { appendFileSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { LOG_FILE, SCHEMA_VERSION } from "../constants.mjs";
 import { MeterRowSchema } from "./schema.mjs";
 
@@ -52,6 +53,10 @@ export function buildRow(usage, headers, sessionHash) {
     qoverage: headers.qoverage || "",
     qclaim: headers.qclaim || "",
     qfallback_pct: headers.qfallback_pct || 0,
+    ...(headers.qoverage_util != null && { qoverage_util: headers.qoverage_util }),
+    ...(headers.qrepresentative_claim && { qrepresentative_claim: headers.qrepresentative_claim }),
+    ...(headers.org_id && { org_id: createHash("sha256").update(headers.org_id).digest("hex").slice(0, 16) }),
+    ...(headers.overage_disabled_reason && { overage_disabled_reason: headers.overage_disabled_reason }),
 
     cache_hit_rate: cacheHitRate,
     q5h_delta: q5hDelta,

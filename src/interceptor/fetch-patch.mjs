@@ -43,6 +43,10 @@ function extractHeaders(response) {
     qoverage: response.headers.get(HEADERS.OVERAGE) || "",
     qclaim: response.headers.get(HEADERS.CLAIM) || "",
     qfallback_pct: parseFloat(response.headers.get(HEADERS.FALLBACK_PCT)) || 0,
+    qoverage_util: parseFloat(response.headers.get(HEADERS.OVERAGE_UTIL)) || undefined,
+    qrepresentative_claim: response.headers.get(HEADERS.REPRESENTATIVE_CLAIM) || undefined,
+    org_id: response.headers.get(HEADERS.ORG_ID) || undefined,
+    overage_disabled_reason: response.headers.get(HEADERS.OVERAGE_DISABLED_REASON) || undefined,
   };
 }
 
