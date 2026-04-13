@@ -12,11 +12,15 @@
   "files": [
     "bin/",
     "src/",
-    "server/"
+    "public/"
   ],
   "scripts": {
     "start:server": "node server/index.mjs",
     "test": "node --test test/"
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://buymeacoffee.com/vsits"
   },
   "dependencies": {
     "zod": "^3.23.0"
@@ -30,6 +34,7 @@
     "type": "git",
     "url": "https://github.com/cnighswonger/claude-code-meter"
   },
+  "author": "Chris Nighswonger <chris@veritassuperaitsolutions.com> (https://veritassuperaitsolutions.com)",
   "keywords": [
     "claude",
     "claude-code",
