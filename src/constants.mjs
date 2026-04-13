@@ -24,6 +24,9 @@ export const KNOWN_RATES = {
   },
 };
 
+// Community API server
+export const DEFAULT_SERVER = "https://meter.veritassuperaitsolutions.com";
+
 // Rate-limit header names
 export const HEADERS = {
   Q5H: "anthropic-ratelimit-unified-5h-utilization",

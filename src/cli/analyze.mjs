@@ -1,5 +1,6 @@
 import { readAllRows, groupBySession } from "../log/reader.mjs";
-import { LOG_FILE } from "../constants.mjs";
+import { LOG_FILE, DEFAULT_SERVER } from "../constants.mjs";
+import { createInterface } from "node:readline";
 
 /**
  * OLS regression: y = Xβ + ε
@@ -257,11 +258,45 @@ export async function analyzeCommand(args) {
   };
 
   if (args.share) {
-    console.log("Summary to share:\n");
-    console.log(JSON.stringify(summary, null, 2));
+    const jsonStr = JSON.stringify(summary, null, 2);
+    console.log("Data to share:\n");
+    console.log(jsonStr);
     console.log(`\nSize: ${JSON.stringify(summary).length} bytes`);
-    // TODO: POST to server when endpoint is ready
-    console.log("\nServer endpoint not yet deployed. Copy the JSON above to share manually.");
+    console.log("\nThis contains ONLY aggregate statistics. No prompts, file paths, request IDs, or timestamps more precise than the session date range.\n");
+
+    if (!args.yes) {
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise((resolve) => {
+        rl.question("Submit to community dataset? [y/N] ", resolve);
+      });
+      rl.close();
+      if (answer.toLowerCase() !== "y") {
+        console.log("Cancelled.");
+        return summary;
+      }
+    }
+
+    const endpoint = args.endpoint || DEFAULT_SERVER;
+    const url = `${endpoint}/api/v1/submit`;
+    try {
+      const res = await globalThis.fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(summary),
+      });
+      const body = await res.json();
+      if (res.ok) {
+        console.log(`\nSubmitted successfully (${body.type}). Thank you!`);
+        console.log(`View community stats: ${endpoint}/api/v1/stats`);
+      } else {
+        console.error(`\nSubmission failed (${res.status}): ${body.error || "unknown error"}`);
+        if (body.issues) body.issues.forEach((i) => console.error(`  ${i.path}: ${i.message}`));
+      }
+    } catch (e) {
+      console.error(`\nConnection failed: ${e.message}`);
+      console.error("You can submit manually by POSTing the JSON above to:");
+      console.error(`  curl -X POST -H 'Content-Type: application/json' -d @- ${url}`);
+    }
   } else {
     console.log(JSON.stringify(summary, null, 2));
   }
