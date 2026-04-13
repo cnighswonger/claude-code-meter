@@ -16,10 +16,24 @@
  */
 
 import { createServer } from "node:http";
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "node:fs";
+import { join, extname } from "node:path";
 import { randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
+import { fileURLToPath } from "node:url";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+const PUBLIC_DIR = join(__dirname, "..", "public");
+
+const MIME_TYPES = {
+  ".html": "text/html",
+  ".css": "text/css",
+  ".js": "application/javascript",
+  ".json": "application/json",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
+};
 
 const PORT = parseInt(process.env.PORT || "3847");
 const DATA_DIR = process.env.DATA_DIR || "./data";
@@ -316,6 +330,24 @@ const server = createServer(async (req, res) => {
         return json(res, 500, { error: "Key storage failed" });
       }
       return json(res, 201, { api_key: key });
+    }
+
+    // Static files from public/
+    if (method === "GET") {
+      const safePath = path === "/" ? "/index.html" : path.replace(/\.\./g, "");
+      const filePath = join(PUBLIC_DIR, safePath);
+      if (existsSync(filePath) && statSync(filePath).isFile()) {
+        const ext = extname(filePath);
+        const mime = MIME_TYPES[ext] || "application/octet-stream";
+        const content = readFileSync(filePath);
+        res.writeHead(200, {
+          "Content-Type": mime,
+          "Cache-Control": "public, max-age=300",
+          "X-Content-Type-Options": "nosniff",
+        });
+        res.end(content);
+        return;
+      }
     }
 
     // 404

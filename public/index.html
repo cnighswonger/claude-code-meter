@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Meter — Community Cost Analytics</title>
+<script src="/vendor/highcharts.js"></script>
+<script src="/vendor/highcharts-more.js"></script>
+<script src="/vendor/solid-gauge.js"></script>
+<script src="/vendor/bullet.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+    color: #f8fafc;
+  }
+  .subtitle {
+    color: #94a3b8;
+    font-size: 0.9rem;
+    margin-bottom: 24px;
+  }
+  .subtitle a { color: #60a5fa; text-decoration: none; }
+  .subtitle a:hover { text-decoration: underline; }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+  .stat-card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+    border: 1px solid #334155;
+  }
+  .stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #60a5fa;
+  }
+  .stat-label {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-top: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .chart-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  .chart-card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #334155;
+  }
+  .chart-card h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    color: #f1f5f9;
+  }
+  .chart-container { height: 300px; }
+  .full-width { grid-column: 1 / -1; }
+  .empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: #64748b;
+  }
+  .empty-state h2 { color: #94a3b8; margin-bottom: 16px; }
+  .empty-state code {
+    background: #1e293b;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    color: #60a5fa;
+  }
+  footer {
+    text-align: center;
+    color: #475569;
+    font-size: 0.75rem;
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #1e293b;
+  }
+  footer a { color: #60a5fa; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>Claude Code Meter</h1>
+<p class="subtitle">
+  Community cost analytics for Claude Code subscriptions.
+  <a href="https://github.com/cnighswonger/claude-code-meter">GitHub</a> |
+  <a href="https://github.com/cnighswonger/claude-code-cache-fix">Cache Fix</a> |
+  <a href="https://veritassuperaitsolutions.com">VSITS</a>
+</p>
+
+<div class="stats-row" id="stats-row"></div>
+<div class="chart-grid" id="chart-grid"></div>
+<div id="empty-state" style="display:none" class="empty-state">
+  <h2>No community data yet</h2>
+  <p>Be the first to contribute:</p>
+  <p style="margin-top:12px">
+    <code>npm install -g claude-code-meter</code><br>
+    <code>claude-meter analyze --share</code>
+  </p>
+</div>
+
+<footer>
+  <a href="https://veritassuperaitsolutions.com">Veritas Supera IT Solutions LLC</a> |
+  Data is anonymous, aggregate, and community-contributed.
+  <a href="/api/v1/stats">API</a> |
+  <a href="/api/v1/dataset">Raw dataset</a>
+</footer>
+
+<script>
+Highcharts.setOptions({
+  chart: { backgroundColor: 'transparent', style: { fontFamily: 'inherit' } },
+  title: { style: { color: '#f1f5f9', fontSize: '14px' } },
+  xAxis: { labels: { style: { color: '#94a3b8' } }, gridLineColor: '#334155', lineColor: '#334155' },
+  yAxis: { labels: { style: { color: '#94a3b8' } }, gridLineColor: '#1e293b' },
+  legend: { itemStyle: { color: '#cbd5e1' }, itemHoverStyle: { color: '#f1f5f9' } },
+  tooltip: { backgroundColor: '#1e293b', borderColor: '#475569', style: { color: '#e2e8f0' } },
+  credits: { enabled: false },
+  colors: ['#60a5fa', '#34d399', '#f59e0b', '#f87171', '#a78bfa', '#fb923c']
+});
+
+async function loadDashboard() {
+  const [statsRes, dataRes] = await Promise.all([
+    fetch('/api/v1/stats'),
+    fetch('/api/v1/dataset?limit=1000')
+  ]);
+  const stats = await statsRes.json();
+  const dataset = await dataRes.json();
+
+  const analyses = dataset.data.filter(d => d.type === 'analysis');
+
+  if (analyses.length === 0) {
+    document.getElementById('empty-state').style.display = 'block';
+    renderStatsRow(stats, 0);
+    return;
+  }
+
+  renderStatsRow(stats, analyses.length);
+  renderCharts(analyses);
+}
+
+function renderStatsRow(stats, analysisCount) {
+  const totalCalls = analyses => analyses.reduce((s, a) => s + (a.n_calls || 0), 0);
+  const totalSessions = analyses => analyses.reduce((s, a) => s + (a.n_sessions || 0), 0);
+
+  const row = document.getElementById('stats-row');
+
+  // Fetch analyses for the calculations
+  fetch('/api/v1/dataset?limit=1000').then(r => r.json()).then(dataset => {
+    const analyses = dataset.data.filter(d => d.type === 'analysis');
+
+    const cards = [
+      { value: stats.total_submissions, label: 'Submissions' },
+      { value: analysisCount, label: 'Analysis Reports' },
+      { value: analyses.reduce((s, a) => s + (a.n_calls || 0), 0).toLocaleString(), label: 'Total API Calls' },
+      { value: analyses.reduce((s, a) => s + (a.n_sessions || 0), 0), label: 'Total Sessions' },
+    ];
+
+    row.innerHTML = cards.map(c => `
+      <div class="stat-card">
+        <div class="stat-value">${c.value}</div>
+        <div class="stat-label">${c.label}</div>
+      </div>
+    `).join('');
+  });
+}
+
+function renderCharts(analyses) {
+  const grid = document.getElementById('chart-grid');
+
+  // 1. R-squared distribution
+  const rSquareds = analyses.map(a => a.ols?.r_squared).filter(v => v != null);
+  if (rSquareds.length > 0) {
+    grid.innerHTML += '<div class="chart-card"><h3>Model Fit (R-squared) Distribution</h3><div class="chart-container" id="chart-rsq"></div></div>';
+    setTimeout(() => {
+      Highcharts.chart('chart-rsq', {
+        chart: { type: 'column' },
+        title: { text: null },
+        xAxis: {
+          categories: rSquareds.map((_, i) => `#${i + 1}`),
+          title: { text: 'Submission', style: { color: '#94a3b8' } }
+        },
+        yAxis: { title: { text: 'R-squared', style: { color: '#94a3b8' } }, max: 1, min: 0 },
+        series: [{ name: 'R-squared', data: rSquareds, colorByPoint: false }],
+        plotOptions: { column: { borderRadius: 4 } }
+      });
+    }, 0);
+  }
+
+  // 2. Cumulative exponent distribution (linear vs superlinear)
+  const exponents = analyses.filter(a => a.exponents).map(a => a.exponents);
+  if (exponents.length > 0) {
+    grid.innerHTML += '<div class="chart-card"><h3>Cost Accumulation Exponent</h3><div class="chart-container" id="chart-exp"></div></div>';
+    setTimeout(() => {
+      Highcharts.chart('chart-exp', {
+        chart: { type: 'bar' },
+        title: { text: null },
+        xAxis: {
+          categories: exponents.map((_, i) => `#${i + 1}`),
+          title: { text: 'Submission', style: { color: '#94a3b8' } }
+        },
+        yAxis: {
+          title: { text: 'Power law exponent (b)', style: { color: '#94a3b8' } },
+          max: Math.max(1.2, ...exponents.map(e => e.mean + 0.2)),
+          plotLines: [{
+            value: 1.0, color: '#f59e0b', width: 2, dashStyle: 'dash',
+            label: { text: 'Linear (b=1)', align: 'left', style: { color: '#f59e0b' } }
+          }]
+        },
+        series: [
+          { name: 'Mean exponent', data: exponents.map(e => +e.mean.toFixed(3)) },
+          { name: 'Median exponent', data: exponents.map(e => +e.median.toFixed(3)) }
+        ]
+      });
+    }, 0);
+  }
+
+  // 3. OLS coefficients comparison
+  const coeffData = analyses.filter(a => a.ols?.coefficients);
+  if (coeffData.length > 0) {
+    grid.innerHTML += '<div class="chart-card full-width"><h3>OLS Coefficients — Q5h Cost per Token Type</h3><div class="chart-container" id="chart-coeff"></div></div>';
+    setTimeout(() => {
+      const featureNames = ['avg_output', 'avg_cache_creation', 'avg_cache_read', 'avg_input'];
+      const series = featureNames.map(f => ({
+        name: f.replace('avg_', ''),
+        data: coeffData.map(a => {
+          const v = a.ols.coefficients[f];
+          return v != null ? +v.toExponential(3) : 0;
+        })
+      }));
+      Highcharts.chart('chart-coeff', {
+        chart: { type: 'column' },
+        title: { text: null },
+        xAxis: {
+          categories: coeffData.map((_, i) => `Submission #${i + 1}`),
+          title: { text: null }
+        },
+        yAxis: {
+          title: { text: 'Q5h / token', style: { color: '#94a3b8' } },
+          labels: {
+            formatter: function() { return this.value.toExponential(1); },
+            style: { color: '#94a3b8' }
+          }
+        },
+        tooltip: {
+          formatter: function() {
+            return `<b>${this.series.name}</b>: ${this.y.toExponential(3)} Q5h/token`;
+          }
+        },
+        series,
+        plotOptions: { column: { borderRadius: 2, groupPadding: 0.15 } }
+      });
+    }, 0);
+  }
+
+  // 4. Pearson correlations heatmap-style
+  const corrData = analyses.filter(a => a.correlations);
+  if (corrData.length > 0) {
+    grid.innerHTML += '<div class="chart-card"><h3>Feature Correlations with Q5h Drain</h3><div class="chart-container" id="chart-corr"></div></div>';
+    setTimeout(() => {
+      const features = ['avg_output', 'avg_cache_creation', 'avg_cache_read', 'avg_input'];
+      const avgCorr = features.map(f => {
+        const vals = corrData.map(a => a.correlations[f]).filter(v => v != null);
+        return +(vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(4);
+      });
+      Highcharts.chart('chart-corr', {
+        chart: { type: 'bar' },
+        title: { text: null },
+        xAxis: {
+          categories: features.map(f => f.replace('avg_', '')),
+          title: { text: null }
+        },
+        yAxis: {
+          title: { text: 'Pearson r', style: { color: '#94a3b8' } },
+          min: -1, max: 1,
+          plotLines: [{ value: 0, color: '#475569', width: 1 }]
+        },
+        series: [{ name: 'Avg correlation', data: avgCorr, colorByPoint: true }],
+        plotOptions: { bar: { borderRadius: 4 } },
+        legend: { enabled: false }
+      });
+    }, 0);
+  }
+
+  // 5. Model cost split
+  const modelData = analyses.filter(a => a.model_splits && Object.keys(a.model_splits).length > 0);
+  if (modelData.length > 0) {
+    grid.innerHTML += '<div class="chart-card"><h3>Avg Q5h Cost per Turn by Model</h3><div class="chart-container" id="chart-models"></div></div>';
+    setTimeout(() => {
+      // Aggregate across all submissions
+      const modelAgg = {};
+      for (const a of modelData) {
+        for (const [model, data] of Object.entries(a.model_splits)) {
+          if (!modelAgg[model]) modelAgg[model] = { calls: 0, q5hSum: 0 };
+          modelAgg[model].calls += data.n_calls;
+          modelAgg[model].q5hSum += data.avg_q5h_per_turn * data.n_calls;
+        }
+      }
+      const models = Object.entries(modelAgg).map(([name, d]) => ({
+        name: name.replace('claude-', ''),
+        y: +(d.q5hSum / d.calls).toFixed(6),
+        calls: d.calls
+      })).sort((a, b) => b.y - a.y);
+
+      Highcharts.chart('chart-models', {
+        chart: { type: 'pie' },
+        title: { text: null },
+        tooltip: {
+          pointFormat: '<b>{point.y:.6f}</b> Q5h/turn<br>{point.calls} calls'
+        },
+        series: [{
+          name: 'Q5h/turn',
+          data: models,
+          dataLabels: {
+            format: '{point.name}<br>{point.y:.4f}',
+            style: { color: '#cbd5e1', fontSize: '11px' }
+          }
+        }]
+      });
+    }, 0);
+  }
+
+  // 6. Peak vs off-peak
+  const peakData = analyses.filter(a => a.peak_vs_offpeak);
+  if (peakData.length > 0) {
+    grid.innerHTML += '<div class="chart-card"><h3>Peak vs Off-Peak Cost per Turn</h3><div class="chart-container" id="chart-peak"></div></div>';
+    setTimeout(() => {
+      Highcharts.chart('chart-peak', {
+        chart: { type: 'column' },
+        title: { text: null },
+        xAxis: {
+          categories: peakData.map((_, i) => `#${i + 1}`),
+          title: { text: 'Submission', style: { color: '#94a3b8' } }
+        },
+        yAxis: { title: { text: 'Q5h per turn', style: { color: '#94a3b8' } } },
+        series: [
+          { name: 'Peak hours', data: peakData.map(a => +a.peak_vs_offpeak.peak_avg_q5h_per_turn.toFixed(6)), color: '#f87171' },
+          { name: 'Off-peak', data: peakData.map(a => +a.peak_vs_offpeak.offpeak_avg_q5h_per_turn.toFixed(6)), color: '#34d399' }
+        ],
+        plotOptions: { column: { borderRadius: 4, groupPadding: 0.15 } }
+      });
+    }, 0);
+  }
+
+  // 7. Superlinear session gauge
+  const superlinearData = analyses.filter(a => a.exponents?.n_total > 0);
+  if (superlinearData.length > 0) {
+    const totalSessions = superlinearData.reduce((s, a) => s + a.exponents.n_total, 0);
+    const totalSuperlinear = superlinearData.reduce((s, a) => s + a.exponents.n_superlinear, 0);
+    const pct = +(totalSuperlinear / totalSessions * 100).toFixed(1);
+
+    grid.innerHTML += `<div class="chart-card"><h3>Sessions with Superlinear Cost Growth (b > 1.3)</h3><div class="chart-container" id="chart-gauge"></div></div>`;
+    setTimeout(() => {
+      Highcharts.chart('chart-gauge', {
+        chart: { type: 'solidgauge' },
+        title: { text: null },
+        pane: {
+          center: ['50%', '65%'], size: '100%',
+          startAngle: -90, endAngle: 90,
+          background: {
+            backgroundColor: '#334155',
+            innerRadius: '60%', outerRadius: '100%',
+            shape: 'arc', borderWidth: 0
+          }
+        },
+        yAxis: {
+          min: 0, max: 100,
+          lineWidth: 0, tickWidth: 0, minorTickInterval: null,
+          title: { text: `${totalSuperlinear} of ${totalSessions} sessions`, y: 80, style: { color: '#94a3b8', fontSize: '12px' } },
+          labels: { distance: 20, style: { color: '#64748b' } },
+          stops: [[0.3, '#34d399'], [0.7, '#f59e0b'], [0.9, '#f87171']]
+        },
+        series: [{
+          name: 'Superlinear %',
+          data: [pct],
+          dataLabels: {
+            format: '{y}%', y: -50,
+            borderWidth: 0,
+            style: { fontSize: '18px', color: '#f1f5f9' }
+          },
+          tooltip: { valueSuffix: '% of sessions show superlinear cost growth' }
+        }]
+      });
+    }, 0);
+  }
+}
+
+loadDashboard().catch(e => {
+  console.error('Dashboard load failed:', e);
+  document.getElementById('empty-state').style.display = 'block';
+});
+</script>
+</body>
+</html>
