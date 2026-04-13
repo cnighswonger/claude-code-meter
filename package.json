@@ -4,7 +4,7 @@
   "description": "Community usage metrics collector for Claude Code — anonymized billing analysis and cost modeling",
   "type": "module",
   "bin": {
-    "claude-meter": "./bin/claude-meter.mjs"
+    "claude-meter": "bin/claude-meter.mjs"
   },
   "exports": {
     "./preload": "./src/interceptor/preload.mjs"
@@ -32,7 +32,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cnighswonger/claude-code-meter"
+    "url": "git+https://github.com/cnighswonger/claude-code-meter.git"
   },
   "author": "Chris Nighswonger <chris@veritassuperaitsolutions.com> (https://veritassuperaitsolutions.com)",
   "keywords": [
