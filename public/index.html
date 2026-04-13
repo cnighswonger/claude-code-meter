@@ -58,7 +58,7 @@
   }
   .chart-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap: 20px;
     margin-bottom: 24px;
   }
@@ -76,6 +76,17 @@
   }
   .chart-container { height: 300px; }
   .full-width { grid-column: 1 / -1; }
+  .chart-grid-bottom {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+  @media (min-width: 1100px) {
+    .chart-grid-bottom {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
   .empty-state {
     text-align: center;
     padding: 60px 20px;
@@ -112,6 +123,7 @@
 
 <div class="stats-row" id="stats-row"></div>
 <div class="chart-grid" id="chart-grid"></div>
+<div class="chart-grid-bottom" id="chart-grid-bottom"></div>
 <div id="empty-state" style="display:none" class="empty-state">
   <h2>No community data yet</h2>
   <p>Be the first to contribute:</p>
@@ -275,9 +287,10 @@ function renderCharts(analyses) {
   }
 
   // 4. Pearson correlations heatmap-style
+  const bottomGrid = document.getElementById('chart-grid-bottom');
   const corrData = analyses.filter(a => a.correlations);
   if (corrData.length > 0) {
-    grid.innerHTML += '<div class="chart-card"><h3>Feature Correlations with Q5h Drain</h3><div class="chart-container" id="chart-corr"></div></div>';
+    bottomGrid.innerHTML += '<div class="chart-card"><h3>Feature Correlations with Q5h Drain</h3><div class="chart-container" id="chart-corr"></div></div>';
     setTimeout(() => {
       const features = ['avg_output', 'avg_cache_creation', 'avg_cache_read', 'avg_input'];
       const avgCorr = features.map(f => {
@@ -306,7 +319,7 @@ function renderCharts(analyses) {
   // 5. Model cost split
   const modelData = analyses.filter(a => a.model_splits && Object.keys(a.model_splits).length > 0);
   if (modelData.length > 0) {
-    grid.innerHTML += '<div class="chart-card"><h3>Avg Q5h Cost per Turn by Model</h3><div class="chart-container" id="chart-models"></div></div>';
+    bottomGrid.innerHTML += '<div class="chart-card"><h3>Avg Q5h Cost per Turn by Model</h3><div class="chart-container" id="chart-models"></div></div>';
     setTimeout(() => {
       // Aggregate across all submissions
       const modelAgg = {};
@@ -344,7 +357,7 @@ function renderCharts(analyses) {
   // 6. Peak vs off-peak
   const peakData = analyses.filter(a => a.peak_vs_offpeak);
   if (peakData.length > 0) {
-    grid.innerHTML += '<div class="chart-card"><h3>Peak vs Off-Peak Cost per Turn</h3><div class="chart-container" id="chart-peak"></div></div>';
+    bottomGrid.innerHTML += '<div class="chart-card"><h3>Peak vs Off-Peak Cost per Turn</h3><div class="chart-container" id="chart-peak"></div></div>';
     setTimeout(() => {
       Highcharts.chart('chart-peak', {
         chart: { type: 'column' },
@@ -370,7 +383,7 @@ function renderCharts(analyses) {
     const totalSuperlinear = superlinearData.reduce((s, a) => s + a.exponents.n_superlinear, 0);
     const pct = +(totalSuperlinear / totalSessions * 100).toFixed(1);
 
-    grid.innerHTML += `<div class="chart-card"><h3>Sessions with Superlinear Cost Growth (b > 1.3)</h3><div class="chart-container" id="chart-gauge"></div></div>`;
+    bottomGrid.innerHTML += `<div class="chart-card"><h3>Sessions with Superlinear Cost Growth (b > 1.3)</h3><div class="chart-container" id="chart-gauge"></div></div>`;
     setTimeout(() => {
       Highcharts.chart('chart-gauge', {
         chart: { type: 'solidgauge' },
