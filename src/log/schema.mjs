@@ -30,6 +30,10 @@ export const MeterRowSchema = z.strictObject({
   qoverage: z.string().max(32).regex(/^[a-z_]*$/),
   qclaim: z.string().max(16).regex(/^[a-z_]*$/),
   qfallback_pct: z.number().min(0).max(1),
+  qoverage_util: z.number().min(0).optional(),         // anthropic-ratelimit-unified-overage-utilization
+  qrepresentative_claim: z.string().max(16).regex(/^[a-z0-9_]*$/).optional(),  // five_hour | seven_day
+  org_id: z.string().max(64).regex(/^[a-zA-Z0-9_-]*$/).optional(),            // anthropic-organization-id (hashed)
+  overage_disabled_reason: z.string().max(64).optional(),                       // only present when overage blocked
 
   // Derived
   cache_hit_rate: z.number().min(0).max(1),
@@ -65,4 +69,58 @@ export const SharePayloadSchema = z.strictObject({
   q7d_end: z.number().min(0).max(2),
   q5h_total_delta: z.number().min(-1).max(2),
   q7d_total_delta: z.number().min(-1).max(2),
+  fallback_pct: z.number().min(0).max(1).optional(),
+  representative_claim_distribution: z.record(z.number().int().min(0)).optional(),  // e.g. { five_hour: 340, seven_day: 60 }
+  overage_events: z.number().int().min(0).optional(),
+  rejected_events: z.number().int().min(0).optional(),
+});
+
+// analyze --fit output schema — session-level OLS regression summary
+export const AnalysisSummarySchema = z.strictObject({
+  v: z.literal(1),
+  generated_at: z.string().datetime(),
+  data_range: z.object({
+    start: z.string().datetime(),
+    end: z.string().datetime(),
+  }),
+
+  // Account-level
+  plan_tier: z.enum(["pro", "max_5", "max_20", "team", "enterprise", "unknown"]),
+  fallback_pct: z.number().min(0).max(1).optional(),
+
+  // Dataset summary
+  n_sessions: z.number().int().min(1),
+  n_calls: z.number().int().min(1),
+  n_drain_events: z.number().int().min(0),
+  n_rejected: z.number().int().min(0),
+
+  // Session-level OLS regression
+  ols: z.object({
+    r_squared: z.number().min(0).max(1),
+    coefficients: z.record(z.number()),     // { avg_output: 1.05e-5, avg_cache_creation: 3.75e-7, ... }
+    p_values: z.record(z.number()).optional(),
+  }),
+
+  // Per-feature Pearson correlations with Q5h delta
+  correlations: z.record(z.number()),       // { avg_output: 0.83, avg_cache_read: -0.014, ... }
+
+  // Cumulative exponent distribution across sessions
+  exponents: z.object({
+    mean: z.number(),
+    median: z.number(),
+    std: z.number(),
+    n_superlinear: z.number().int(),        // sessions with b > 1.3
+    n_total: z.number().int(),
+  }),
+
+  // Splits
+  peak_vs_offpeak: z.object({
+    peak_avg_q5h_per_turn: z.number(),
+    offpeak_avg_q5h_per_turn: z.number(),
+  }).optional(),
+
+  model_splits: z.record(z.object({
+    n_calls: z.number().int(),
+    avg_q5h_per_turn: z.number(),
+  })).optional(),
 });

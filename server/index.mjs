@@ -25,6 +25,31 @@ const PORT = parseInt(process.env.PORT || "3847");
 const DATA_DIR = process.env.DATA_DIR || "./data";
 const KEYS_FILE = join(DATA_DIR, "api-keys.json");
 
+// Rate limiting: per-IP sliding window
+const RATE_LIMIT_ANON = { max: 10, windowMs: 86400000 };  // 10/day anonymous
+const RATE_LIMIT_KEYED = { max: 100, windowMs: 86400000 }; // 100/day with API key
+const rateBuckets = new Map(); // ip -> { count, resetAt }
+
+function checkRateLimit(ip, hasKey) {
+  const limit = hasKey ? RATE_LIMIT_KEYED : RATE_LIMIT_ANON;
+  const now = Date.now();
+  let bucket = rateBuckets.get(ip);
+  if (!bucket || now > bucket.resetAt) {
+    bucket = { count: 0, resetAt: now + limit.windowMs };
+    rateBuckets.set(ip, bucket);
+  }
+  bucket.count++;
+  return bucket.count <= limit.max;
+}
+
+// Clean stale rate buckets every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, bucket] of rateBuckets) {
+    if (now > bucket.resetAt) rateBuckets.delete(ip);
+  }
+}, 3600000);
+
 // Ensure data directory exists
 mkdirSync(DATA_DIR, { recursive: true });
 
@@ -138,14 +163,21 @@ const server = createServer(async (req, res) => {
   }
 
   try {
-    // POST /api/v1/submit
+    // POST /api/v1/submit — accepts SharePayload or AnalysisSummary
     if (method === "POST" && path === "/api/v1/submit") {
       const apiKey = req.headers["x-api-key"];
-      if (!apiKey || !isValidKey(apiKey)) {
-        return json(res, 401, { error: "Invalid or missing API key" });
+      const hasKey = apiKey && isValidKey(apiKey);
+      const clientIp = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+
+      if (!checkRateLimit(clientIp, hasKey)) {
+        return json(res, 429, { error: "Rate limit exceeded. Try again tomorrow or register an API key." });
       }
 
       const body = await readBody(req);
+      if (body.length > 65536) {
+        return json(res, 413, { error: "Payload too large (max 64KB)" });
+      }
+
       let payload;
       try {
         payload = JSON.parse(body);
@@ -153,19 +185,30 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { error: "Invalid JSON" });
       }
 
-      const result = SharePayloadSchema.safeParse(payload);
-      if (!result.success) {
-        return json(res, 422, {
-          error: "Schema validation failed",
-          issues: result.error.issues.map((i) => ({
-            path: i.path.join("."),
-            message: i.message,
-          })),
-        });
+      // Try both schemas — SharePayload (session summary) or AnalysisSummary (regression output)
+      const shareResult = SharePayloadSchema.safeParse(payload);
+      if (shareResult.success) {
+        appendSubmission({ type: "session", auth: hasKey ? "key" : "anon", ...shareResult.data });
+        return json(res, 201, { ok: true, type: "session" });
       }
 
-      appendSubmission(result.data);
-      return json(res, 201, { ok: true });
+      // Check if it's an analysis summary (has ols field)
+      if (payload.ols && payload.n_sessions) {
+        // Lightweight validation for analysis summaries
+        if (typeof payload.v !== "number" || typeof payload.n_calls !== "number") {
+          return json(res, 422, { error: "Analysis summary missing required fields" });
+        }
+        appendSubmission({ type: "analysis", auth: hasKey ? "key" : "anon", ...payload });
+        return json(res, 201, { ok: true, type: "analysis" });
+      }
+
+      return json(res, 422, {
+        error: "Schema validation failed — payload must match SharePayload or AnalysisSummary schema",
+        issues: shareResult.error.issues.slice(0, 5).map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
     }
 
     // GET /api/v1/dataset

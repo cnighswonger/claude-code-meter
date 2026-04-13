@@ -23,6 +23,9 @@ const { values, positionals } = parseArgs({
     endpoint: { type: "string", short: "e" },
     community: { type: "boolean", short: "c" },
     yes: { type: "boolean", short: "y" },
+    share: { type: "boolean" },
+    fit: { type: "boolean" },
+    "log-file": { type: "string" },
   },
 });
 
@@ -35,6 +38,7 @@ Commands:
   status              Current session summary
   history             Daily/weekly usage aggregates
   rates               Estimated billing rates via regression analysis
+  analyze             Session-level cost model regression (the good stuff)
   share               Submit anonymized data to community dataset
   setup               Install interceptor and configure sharing
 
@@ -44,6 +48,8 @@ Options:
   -p, --plan <tier>   Plan tier: pro, max_5, max_20, team, enterprise
   -e, --endpoint <url> Community API endpoint
   -c, --community     Use community dataset for rates
+  --share             Include share preview with analyze output
+  --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
   -y, --yes           Skip confirmation prompts
   -h, --help          Show this help
 `);
@@ -78,6 +84,11 @@ switch (command) {
   case "share": {
     const { shareCommand } = await import("../src/cli/share.mjs");
     await shareCommand(args);
+    break;
+  }
+  case "analyze": {
+    const { analyzeCommand } = await import("../src/cli/analyze.mjs");
+    await analyzeCommand({ ...args, share: values.share, logFile: values["log-file"] });
     break;
   }
   case "setup": {

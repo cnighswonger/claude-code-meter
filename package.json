@@ -1,7 +1,7 @@
 {
-  "name": "@claude-meter/collector",
+  "name": "claude-code-meter",
   "version": "0.1.0",
-  "description": "Community usage metrics collector for Claude Code — anonymized billing analysis",
+  "description": "Community usage metrics collector for Claude Code — anonymized billing analysis and cost modeling",
   "type": "module",
   "bin": {
     "claude-meter": "./bin/claude-meter.mjs"
@@ -28,7 +28,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourorg/claude-meter"
+    "url": "https://github.com/cnighswonger/claude-code-meter"
   },
   "keywords": [
     "claude",
@@ -36,6 +36,8 @@
     "usage",
     "metrics",
     "billing",
-    "cache"
+    "cache",
+    "cost-model",
+    "quota"
   ]
 }
