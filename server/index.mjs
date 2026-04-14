@@ -121,7 +121,24 @@ function getDataFile() {
 
 function appendSubmission(payload) {
   const row = { ...payload, _submitted: new Date().toISOString() };
-  appendFileSync(getDataFile(), JSON.stringify(row) + "\n", "utf-8");
+  const dataFile = getDataFile();
+
+  // Dedup: if install_id matches an existing row, replace it instead of appending
+  if (row.install_id) {
+    try {
+      if (existsSync(dataFile)) {
+        const lines = readFileSync(dataFile, "utf-8").split("\n").filter(l => l.trim());
+        const filtered = lines.filter(l => {
+          try { return JSON.parse(l).install_id !== row.install_id; } catch { return true; }
+        });
+        filtered.push(JSON.stringify(row));
+        writeFileSync(dataFile, filtered.join("\n") + "\n", "utf-8");
+        return;
+      }
+    } catch {}
+  }
+
+  appendFileSync(dataFile, JSON.stringify(row) + "\n", "utf-8");
 }
 
 function readAllSubmissions() {
