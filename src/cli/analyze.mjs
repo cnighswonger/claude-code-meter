@@ -282,6 +282,7 @@ export async function analyzeCommand(args) {
       end: rows[rows.length - 1].ts,
     },
     plan_tier: planTier,
+    billing_type: rows.some(r => (r.q5h || 0) > 0) ? "subscription" : rows.some(r => r.qstatus) ? "subscription" : "api",
     ...(fallbackPct != null && { fallback_pct: fallbackPct }),
     n_sessions: sessionEntries.length,
     n_calls: rows.length,
