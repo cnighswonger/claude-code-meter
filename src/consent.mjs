@@ -161,6 +161,7 @@ export async function requestConsent(skipInteractive = false) {
   config.consent_timestamp = timestamp;
   config.install_hash = installId;
   delete config.opted_out;
+  delete config.opted_out_at;
   writeConfig(config);
 
   console.log(`\nConsent granted. Token: ${token.slice(0, 8)}...`);
