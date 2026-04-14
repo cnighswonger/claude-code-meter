@@ -32,6 +32,7 @@
   th { text-align: left; color: #94a3b8; font-weight: 500; padding: 8px 12px; border-bottom: 1px solid #334155; }
   td { padding: 8px 12px; border-bottom: 1px solid #1e293b; }
   td.num { text-align: right; font-family: 'SF Mono', monospace; }
+  td.ctr, th.ctr { text-align: center; }
   .highlight { color: #60a5fa; font-weight: 600; }
   .warn { color: #f59e0b; }
   .good { color: #34d399; }
@@ -177,7 +178,7 @@ async function loadAnalysis() {
   // Section 1: Subscription Value Multipliers
   html += '<div class="card"><h3>Subscription Value Multipliers</h3>';
   html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">How much API-equivalent value each subscription tier delivers, based on observed usage.</p>';
-  html += '<table><tr><th>Plan</th><th>Monthly Price</th><th>API-Equivalent Value (observed)</th><th>Value Multiplier</th><th>Effective $/MTok (output)</th></tr>';
+  html += '<table><tr><th>Plan</th><th class="ctr">Monthly Price</th><th class="ctr">API-Equivalent Value (observed)</th><th class="ctr">Value Multiplier</th><th class="ctr">Effective $/MTok (output)</th></tr>';
 
   const monthlyApiCost = totalApiCost / daySpan * 30;
   for (const [tier, price] of Object.entries(PLAN_PRICES)) {
@@ -187,10 +188,10 @@ async function loadAnalysis() {
     const monthlyOutputTokens = (primary.model_splits?.['claude-opus-4-6']?.n_calls || totalCalls) * (coeffs.avg_output ? 1/coeffs.avg_output * 0.00001 : 400); // rough estimate
     html += `<tr>`;
     html += `<td>${PLAN_LABELS[tier]}</td>`;
-    html += `<td class="num">$${price}</td>`;
-    html += `<td class="num highlight">$${monthlyApiCost.toFixed(0)}</td>`;
-    html += `<td class="num good">${multiplier.toFixed(1)}x</td>`;
-    html += `<td class="num">$${(price / (5.5 * 30 / daySpan)).toFixed(2)}</td>`;
+    html += `<td class="ctr">$${price}</td>`;
+    html += `<td class="ctr highlight">$${monthlyApiCost.toFixed(0)}</td>`;
+    html += `<td class="ctr good">${multiplier.toFixed(1)}x</td>`;
+    html += `<td class="ctr">$${(price / (5.5 * 30 / daySpan)).toFixed(2)}</td>`;
     html += `</tr>`;
   }
   html += '</table></div>';
@@ -198,7 +199,7 @@ async function loadAnalysis() {
   // Section 2: Token Cost Against Quota
   html += '<div class="card"><h3>What Each Token Type Costs Against Quota (Q5h)</h3>';
   html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">OLS regression coefficients: how much each token type contributes to Q5h drain per token. Higher = more expensive against quota.</p>';
-  html += '<table><tr><th>Token Type</th><th>Q5h Cost per Token</th><th>Relative Cost</th><th>Pearson r</th></tr>';
+  html += '<table><tr><th>Token Type</th><th class="ctr">Q5h Cost per Token</th><th class="ctr">Relative Cost</th><th class="ctr">Pearson r</th></tr>';
 
   const corrData = primary.correlations || {};
   const coeffEntries = Object.entries(coeffs).filter(([k]) => k !== 'intercept').sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
@@ -209,9 +210,9 @@ async function loadAnalysis() {
     const cssClass = value > 0 ? 'warn' : 'good';
     html += `<tr>`;
     html += `<td>${name.replace('avg_', '')}</td>`;
-    html += `<td class="num ${cssClass}">${value.toExponential(3)}</td>`;
-    html += `<td class="num">${pct}%</td>`;
-    html += `<td class="num">${corr.toFixed(3)}</td>`;
+    html += `<td class="ctr ${cssClass}">${value.toExponential(3)}</td>`;
+    html += `<td class="ctr">${pct}%</td>`;
+    html += `<td class="ctr">${corr.toFixed(3)}</td>`;
     html += `</tr>`;
   }
   html += `<tr><td colspan="4" style="color:#64748b;font-size:0.8rem;padding-top:12px">R² = ${(primary.ols?.r_squared || 0).toFixed(4)} | Intercept = ${(coeffs.intercept || 0).toExponential(3)} Q5h/turn (fixed overhead)</td></tr>`;
@@ -235,7 +236,7 @@ async function loadAnalysis() {
     { name: 'Mixed Opus+Haiku', output_pct: 0.3, cache_read_pct: 85, cache_create_pct: 2, input_pct: 12.7 },
   ];
 
-  html += '<table style="margin-top:16px"><tr><th>Scenario</th><th>Pro Q7d</th><th>Max 5x Q7d</th><th>Max 20x Q7d</th></tr>';
+  html += '<table style="margin-top:16px"><tr><th>Scenario</th><th class="ctr">Pro Q7d</th><th class="ctr">Max 5x Q7d</th><th class="ctr">Max 20x Q7d</th></tr>';
   for (const s of scenarios) {
     // Weighted cost per token at this mix
     // Use API rates for Opus as the base
@@ -259,7 +260,7 @@ async function loadAnalysis() {
     html += `<tr><td>${s.name}</td>`;
     for (const tier of ['pro', 'max_5', 'max_20']) {
       const t = s[tier];
-      html += `<td class="num">${t >= 1000 ? (t/1000).toFixed(1) + 'B' : t.toFixed(0) + 'M'}</td>`;
+      html += `<td class="ctr">${t >= 1000 ? (t/1000).toFixed(1) + 'B' : t.toFixed(0) + 'M'}</td>`;
     }
     html += '</tr>';
   }
@@ -270,13 +271,13 @@ async function loadAnalysis() {
   html += '<div class="card"><h3>What Does "5x" Actually Mean?</h3>';
   html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">Anthropic markets Max 5x as "5 times more usage than Pro." But the Pro baseline is undefined. Here is what our data can tell us.</p>';
   html += '<table>';
-  html += `<tr><th>Metric</th><th>Observed Value</th><th>Implication</th></tr>`;
-  html += `<tr><td>API-equivalent cost (${daySpan.toFixed(0)} days)</td><td class="num highlight">$${totalApiCost.toFixed(0)}</td><td>What this usage would cost at pay-per-use rates</td></tr>`;
-  html += `<tr><td>Subscription cost (${daySpan.toFixed(0)} days)</td><td class="num good">$${(100 / 30 * daySpan).toFixed(0)}</td><td>What Max 5x actually cost for this period</td></tr>`;
-  html += `<tr><td>Effective multiplier</td><td class="num highlight">${(totalApiCost / (100 / 30 * daySpan)).toFixed(1)}x</td><td>API value ÷ subscription cost</td></tr>`;
-  html += `<tr><td>fallback_percentage header</td><td class="num warn">${fallbackPct}</td><td>Undocumented per-account scalar (static, observed on every call)</td></tr>`;
-  html += `<tr><td>Cache hit rate (avg)</td><td class="num good">${avgCacheSavingsPct.toFixed(0)}%</td><td>Cache optimization is the primary value driver</td></tr>`;
-  html += `<tr><td>Cost exponent (mean)</td><td class="num">${(primary.exponents?.mean || 0).toFixed(2)}</td><td>${(primary.exponents?.mean || 0) < 1.1 ? 'Approximately linear — cost per turn is stable' : 'Superlinear — cost per turn increases over session'}</td></tr>`;
+  html += `<tr><th>Metric</th><th class="ctr">Observed Value</th><th>Implication</th></tr>`;
+  html += `<tr><td>API-equivalent cost (${daySpan.toFixed(0)} days)</td><td class="ctr highlight">$${totalApiCost.toFixed(0)}</td><td>What this usage would cost at pay-per-use rates</td></tr>`;
+  html += `<tr><td>Subscription cost (${daySpan.toFixed(0)} days)</td><td class="ctr good">$${(100 / 30 * daySpan).toFixed(0)}</td><td>What Max 5x actually cost for this period</td></tr>`;
+  html += `<tr><td>Effective multiplier</td><td class="ctr highlight">${(totalApiCost / (100 / 30 * daySpan)).toFixed(1)}x</td><td>API value ÷ subscription cost</td></tr>`;
+  html += `<tr><td>fallback_percentage header</td><td class="ctr warn">${fallbackPct}</td><td>Undocumented per-account scalar (static, observed on every call)</td></tr>`;
+  html += `<tr><td>Cache hit rate (avg)</td><td class="ctr good">${avgCacheSavingsPct.toFixed(0)}%</td><td>Cache optimization is the primary value driver</td></tr>`;
+  html += `<tr><td>Cost exponent (mean)</td><td class="ctr">${(primary.exponents?.mean || 0).toFixed(2)}</td><td>${(primary.exponents?.mean || 0) < 1.1 ? 'Approximately linear — cost per turn is stable' : 'Superlinear — cost per turn increases over session'}</td></tr>`;
   html += '</table>';
   html += '<p style="color:#64748b;font-size:0.8rem;margin-top:12px">The "5x" multiplier is applied to an undefined base. See <a href="https://veritassuperaitsolutions.com/three-layer-gate-quota-overage/" style="color:#60a5fa">our analysis</a> for the full discussion of what the TOS and published documents say about this number.</p>';
   html += '</div>';
