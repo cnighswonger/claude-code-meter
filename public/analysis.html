@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude Code Meter — Deep Analysis</title>
+<script src="/vendor/highcharts.js"></script>
+<script src="/vendor/highcharts-more.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 24px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.6rem; font-weight: 600; color: #f8fafc; margin-bottom: 4px; }
+  h2 { font-size: 1.2rem; font-weight: 600; color: #f1f5f9; margin: 24px 0 12px; }
+  .subtitle { color: #94a3b8; font-size: 0.85rem; margin-bottom: 20px; }
+  .subtitle a { color: #60a5fa; text-decoration: none; }
+  .card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid #334155;
+    margin-bottom: 20px;
+  }
+  .card h3 { font-size: 1rem; font-weight: 600; color: #f1f5f9; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { text-align: left; color: #94a3b8; font-weight: 500; padding: 8px 12px; border-bottom: 1px solid #334155; }
+  td { padding: 8px 12px; border-bottom: 1px solid #1e293b; }
+  td.num { text-align: right; font-family: 'SF Mono', monospace; }
+  .highlight { color: #60a5fa; font-weight: 600; }
+  .warn { color: #f59e0b; }
+  .good { color: #34d399; }
+  .disclaimer {
+    background: #1a1a2e;
+    border: 1px solid #334155;
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin: 20px 0;
+    line-height: 1.5;
+  }
+  .disclaimer strong { color: #f59e0b; }
+  .chart-container { height: 300px; margin-top: 12px; }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .stat-card {
+    background: #1e293b;
+    border-radius: 12px;
+    padding: 16px;
+    text-align: center;
+    border: 1px solid #334155;
+  }
+  .stat-value { font-size: 1.6rem; font-weight: 700; color: #60a5fa; }
+  .stat-label { font-size: 0.75rem; color: #94a3b8; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.05em; }
+  footer {
+    text-align: center;
+    color: #475569;
+    font-size: 0.75rem;
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #1e293b;
+  }
+  footer a { color: #60a5fa; text-decoration: none; }
+</style>
+</head>
+<body>
+
+<h1>Deep Analysis — Token Capacity & Cost Model</h1>
+<p class="subtitle">
+  <a href="/">← Dashboard</a> |
+  Empirical estimates derived from community usage data
+</p>
+
+<div class="disclaimer">
+  <strong>Important:</strong> All figures on this page are <strong>estimates</strong> derived from observed usage patterns and published API rates.
+  Anthropic does not publish subscription token budgets or quota-to-token mappings.
+  These numbers are reverse-engineered from response headers and may not reflect actual billing.
+  Rates source: <a href="https://platform.claude.com/docs/en/docs/about-claude/pricing">platform.claude.com/docs</a>.
+  <strong>This is not financial advice. Verify all figures independently before making purchasing decisions.</strong>
+</div>
+
+<div id="content"><p style="color:#64748b">Loading analysis data...</p></div>
+
+<footer>
+  <a href="https://veritassuperaitsolutions.com">Veritas Supera IT Solutions LLC</a> |
+  <a href="https://github.com/cnighswonger/claude-code-meter">Source</a> |
+  <a href="/">Dashboard</a>
+</footer>
+
+<script>
+Highcharts.setOptions({
+  chart: { backgroundColor: 'transparent', style: { fontFamily: 'inherit' } },
+  title: { style: { color: '#f1f5f9', fontSize: '14px' } },
+  xAxis: { labels: { style: { color: '#94a3b8' } }, gridLineColor: '#334155', lineColor: '#334155' },
+  yAxis: { labels: { style: { color: '#94a3b8' } }, gridLineColor: '#1e293b' },
+  legend: { itemStyle: { color: '#cbd5e1' } },
+  tooltip: { backgroundColor: '#1e293b', borderColor: '#475569', style: { color: '#e2e8f0' } },
+  credits: { enabled: false },
+  colors: ['#60a5fa', '#34d399', '#f59e0b', '#f87171', '#a78bfa', '#fb923c']
+});
+
+const PLAN_PRICES = { pro: 20, max_5: 100, max_20: 200 };
+const PLAN_LABELS = { pro: 'Pro ($20/mo)', max_5: 'Max 5x ($100/mo)', max_20: 'Max 20x ($200/mo)' };
+const PLAN_MULTIPLIERS = { pro: 1, max_5: 5, max_20: 20 };
+
+async function loadAnalysis() {
+  const res = await fetch('/api/v1/dataset?limit=100');
+  const dataset = await res.json();
+  const analyses = dataset.data.filter(d => d.type === 'analysis' && d.cost_analysis);
+
+  if (analyses.length === 0) {
+    document.getElementById('content').innerHTML = '<p style="color:#64748b">No cost analysis data available yet. Run <code>claude-meter analyze --share</code> to contribute.</p>';
+    return;
+  }
+
+  // Aggregate across submissions (deduped by install_id)
+  const latest = {};
+  for (const a of analyses) {
+    const id = a.install_id || 'unknown';
+    latest[id] = a; // last one wins per install
+  }
+  const dedupedAnalyses = Object.values(latest);
+
+  const totalApiCost = dedupedAnalyses.reduce((s, a) => s + a.cost_analysis.total_api_cost, 0);
+  const totalNoCacheCost = dedupedAnalyses.reduce((s, a) => s + a.cost_analysis.no_cache_cost, 0);
+  const totalCalls = dedupedAnalyses.reduce((s, a) => s + a.n_calls, 0);
+  const totalSessions = dedupedAnalyses.reduce((s, a) => s + a.n_sessions, 0);
+  const avgCacheSavingsPct = dedupedAnalyses.reduce((s, a) => s + (a.cost_analysis.cache_savings_pct || 0), 0) / dedupedAnalyses.length;
+
+  // Estimate Q7d capacity from the data
+  // We use the relationship: API cost consumed / Q7d% consumed = total Q7d capacity in API dollars
+  // This is an approximation — Q7d resets weekly, so we use the most recent submission's data
+  const primary = dedupedAnalyses[0];
+  const fallbackPct = primary.fallback_pct || 0.5;
+
+  // Derive from OLS coefficients — cost per turn in Q5h terms
+  const coeffs = primary.ols?.coefficients || {};
+  const avgQ5hPerTurn = Object.entries(coeffs)
+    .filter(([k]) => k !== 'intercept')
+    .reduce((s, [, v]) => s + Math.abs(v), 0);
+
+  // Estimate: how many turns fit in a Q5h window (100%)
+  const turnsPerQ5h = avgQ5hPerTurn > 0 ? (1.0 / (coeffs.intercept + avgQ5hPerTurn)) : 0;
+  const costPerTurn = totalApiCost / totalCalls;
+
+  // Q5h capacity estimates per tier
+  const q5hCapacityApiDollars = costPerTurn * turnsPerQ5h;
+
+  // Q7d: 7 days × ~33.6 Q5h windows per week (5h windows in 168 hours)
+  const q5hWindowsPerWeek = 168 / 5;
+  // But Q7d is a separate budget, not just sum of Q5h
+  // Use observed data: primary.n_calls over primary data_range days, with Q7d delta
+  const firstDate = new Date(primary.data_range?.start || Date.now());
+  const lastDate = new Date(primary.data_range?.end || Date.now());
+  const daySpan = Math.max(1, (lastDate - firstDate) / 86400000);
+
+  let html = '';
+
+  // Key metrics
+  html += '<div class="stats-row">';
+  html += `<div class="stat-card"><div class="stat-value">${dedupedAnalyses.length}</div><div class="stat-label">Contributors</div></div>`;
+  html += `<div class="stat-card"><div class="stat-value">${totalCalls.toLocaleString()}</div><div class="stat-label">API Calls Analyzed</div></div>`;
+  html += `<div class="stat-card"><div class="stat-value">$${totalApiCost.toLocaleString(undefined, {maximumFractionDigits:0})}</div><div class="stat-label">API-Equivalent Cost</div></div>`;
+  html += `<div class="stat-card"><div class="stat-value">${avgCacheSavingsPct.toFixed(0)}%</div><div class="stat-label">Avg Cache Savings</div></div>`;
+  html += '</div>';
+
+  // Section 1: Subscription Value Multipliers
+  html += '<div class="card"><h3>Subscription Value Multipliers</h3>';
+  html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">How much API-equivalent value each subscription tier delivers, based on observed usage.</p>';
+  html += '<table><tr><th>Plan</th><th>Monthly Price</th><th>API-Equivalent Value (observed)</th><th>Value Multiplier</th><th>Effective $/MTok (output)</th></tr>';
+
+  const monthlyApiCost = totalApiCost / daySpan * 30;
+  for (const [tier, price] of Object.entries(PLAN_PRICES)) {
+    const multiplier = monthlyApiCost / price;
+    // Effective rate: what users actually pay per output MTok on subscription
+    // = plan_price / (monthly output tokens / 1M)
+    const monthlyOutputTokens = (primary.model_splits?.['claude-opus-4-6']?.n_calls || totalCalls) * (coeffs.avg_output ? 1/coeffs.avg_output * 0.00001 : 400); // rough estimate
+    html += `<tr>`;
+    html += `<td>${PLAN_LABELS[tier]}</td>`;
+    html += `<td class="num">$${price}</td>`;
+    html += `<td class="num highlight">$${monthlyApiCost.toFixed(0)}</td>`;
+    html += `<td class="num good">${multiplier.toFixed(1)}x</td>`;
+    html += `<td class="num">$${(price / (5.5 * 30 / daySpan)).toFixed(2)}</td>`;
+    html += `</tr>`;
+  }
+  html += '</table></div>';
+
+  // Section 2: Token Cost Against Quota
+  html += '<div class="card"><h3>What Each Token Type Costs Against Quota (Q5h)</h3>';
+  html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">OLS regression coefficients: how much each token type contributes to Q5h drain per token. Higher = more expensive against quota.</p>';
+  html += '<table><tr><th>Token Type</th><th>Q5h Cost per Token</th><th>Relative Cost</th><th>Pearson r</th></tr>';
+
+  const corrData = primary.correlations || {};
+  const coeffEntries = Object.entries(coeffs).filter(([k]) => k !== 'intercept').sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const maxCoeff = Math.max(...coeffEntries.map(([, v]) => Math.abs(v)));
+  for (const [name, value] of coeffEntries) {
+    const pct = maxCoeff > 0 ? (Math.abs(value) / maxCoeff * 100).toFixed(0) : 0;
+    const corr = corrData[name] || 0;
+    const cssClass = value > 0 ? 'warn' : 'good';
+    html += `<tr>`;
+    html += `<td>${name.replace('avg_', '')}</td>`;
+    html += `<td class="num ${cssClass}">${value.toExponential(3)}</td>`;
+    html += `<td class="num">${pct}%</td>`;
+    html += `<td class="num">${corr.toFixed(3)}</td>`;
+    html += `</tr>`;
+  }
+  html += `<tr><td colspan="4" style="color:#64748b;font-size:0.8rem;padding-top:12px">R² = ${(primary.ols?.r_squared || 0).toFixed(4)} | Intercept = ${(coeffs.intercept || 0).toExponential(3)} Q5h/turn (fixed overhead)</td></tr>`;
+  html += '</table></div>';
+
+  // Section 3: Estimated Token Capacity per Q7d Window
+  html += '<div class="card"><h3>Estimated Maximum Tokens per Q7d Window</h3>';
+  html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">How many tokens of each type could theoretically fit in a full Q7d window (100%) at the observed usage mix. Assumes current cache hit rates are maintained.</p>';
+
+  // Derive: we consumed totalApiCost worth of tokens. If Q7d moved some amount,
+  // then total Q7d budget ≈ totalApiCost / (q7d_consumed_fraction)
+  // We approximate q7d fraction from the data range vs 7 days
+  // This is rough — need the actual Q7d delta sum for precision
+
+  html += '<div class="chart-container" id="chart-capacity"></div>';
+
+  // Scenario table
+  const scenarios = [
+    { name: 'Heavy Opus (90% cache hit)', output_pct: 0.2, cache_read_pct: 90, cache_create_pct: 1, input_pct: 8.8 },
+    { name: 'Optimized Opus (99% cache hit)', output_pct: 0.2, cache_read_pct: 99, cache_create_pct: 0.1, input_pct: 0.7 },
+    { name: 'Mixed Opus+Haiku', output_pct: 0.3, cache_read_pct: 85, cache_create_pct: 2, input_pct: 12.7 },
+  ];
+
+  html += '<table style="margin-top:16px"><tr><th>Scenario</th><th>Pro Q7d</th><th>Max 5x Q7d</th><th>Max 20x Q7d</th></tr>';
+  for (const s of scenarios) {
+    // Weighted cost per token at this mix
+    // Use API rates for Opus as the base
+    const weightedRate = (
+      s.output_pct/100 * 25 +
+      s.cache_read_pct/100 * 0.50 +
+      s.cache_create_pct/100 * 10 +
+      s.input_pct/100 * 5
+    ); // $/MTok weighted average
+
+    // Q7d budget in API dollars per tier (rough: monthly price * 7/30 * some efficiency factor)
+    // Better: use our observed data. We paid ~$100/mo (Max 5x) and consumed ~51% Q7d in 10 days
+    // So Q7d capacity ≈ totalApiCost / (days/7 * q7d_fraction_per_week)
+    // This is circular without external calibration, so we use the subscription as denominator
+    for (const tier of ['pro', 'max_5', 'max_20']) {
+      const weeklyBudget = PLAN_PRICES[tier] / 4.3; // weekly portion of monthly price
+      const tokensM = weeklyBudget / weightedRate; // millions of tokens
+      s[tier] = tokensM;
+    }
+
+    html += `<tr><td>${s.name}</td>`;
+    for (const tier of ['pro', 'max_5', 'max_20']) {
+      const t = s[tier];
+      html += `<td class="num">${t >= 1000 ? (t/1000).toFixed(1) + 'B' : t.toFixed(0) + 'M'}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '<tr><td colspan="4" style="color:#64748b;font-size:0.8rem;padding-top:12px">Estimates assume Opus 4.6 standard rates, 1h cache TTL. Actual capacity depends on model mix, cache efficiency, and server-side quota accounting which Anthropic does not publish.</td></tr>';
+  html += '</table></div>';
+
+  // Section 4: The "5x" Question
+  html += '<div class="card"><h3>What Does "5x" Actually Mean?</h3>';
+  html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">Anthropic markets Max 5x as "5 times more usage than Pro." But the Pro baseline is undefined. Here is what our data can tell us.</p>';
+  html += '<table>';
+  html += `<tr><th>Metric</th><th>Observed Value</th><th>Implication</th></tr>`;
+  html += `<tr><td>API-equivalent cost (${daySpan.toFixed(0)} days)</td><td class="num highlight">$${totalApiCost.toFixed(0)}</td><td>What this usage would cost at pay-per-use rates</td></tr>`;
+  html += `<tr><td>Subscription cost (${daySpan.toFixed(0)} days)</td><td class="num good">$${(100 / 30 * daySpan).toFixed(0)}</td><td>What Max 5x actually cost for this period</td></tr>`;
+  html += `<tr><td>Effective multiplier</td><td class="num highlight">${(totalApiCost / (100 / 30 * daySpan)).toFixed(1)}x</td><td>API value ÷ subscription cost</td></tr>`;
+  html += `<tr><td>fallback_percentage header</td><td class="num warn">${fallbackPct}</td><td>Undocumented per-account scalar (static, observed on every call)</td></tr>`;
+  html += `<tr><td>Cache hit rate (avg)</td><td class="num good">${avgCacheSavingsPct.toFixed(0)}%</td><td>Cache optimization is the primary value driver</td></tr>`;
+  html += `<tr><td>Cost exponent (mean)</td><td class="num">${(primary.exponents?.mean || 0).toFixed(2)}</td><td>${(primary.exponents?.mean || 0) < 1.1 ? 'Approximately linear — cost per turn is stable' : 'Superlinear — cost per turn increases over session'}</td></tr>`;
+  html += '</table>';
+  html += '<p style="color:#64748b;font-size:0.8rem;margin-top:12px">The "5x" multiplier is applied to an undefined base. See <a href="https://veritassuperaitsolutions.com/three-layer-gate-quota-overage/" style="color:#60a5fa">our analysis</a> for the full discussion of what the TOS and published documents say about this number.</p>';
+  html += '</div>';
+
+  // Section 5: Cost per turn by model
+  html += '<div class="card"><h3>API Cost per Turn by Model</h3>';
+  html += '<div class="chart-container" id="chart-model-cost"></div>';
+  html += '</div>';
+
+  document.getElementById('content').innerHTML = html;
+
+  // Render charts
+  const modelSplits = primary.model_splits || {};
+  const modelNames = Object.keys(modelSplits);
+  if (modelNames.length > 0) {
+    const modelCosts = primary.cost_analysis.by_model || {};
+    Highcharts.chart('chart-model-cost', {
+      chart: { type: 'column' },
+      title: { text: null },
+      xAxis: {
+        categories: modelNames.map(m => m.replace('claude-', '')),
+        labels: { style: { color: '#94a3b8' } }
+      },
+      yAxis: {
+        title: { text: 'API Cost per Turn ($)', style: { color: '#94a3b8' } },
+        labels: {
+          formatter: function() { return '$' + this.value.toFixed(2); },
+          style: { color: '#94a3b8' }
+        }
+      },
+      series: [{
+        name: 'Cost/turn',
+        data: modelNames.map(m => {
+          const mc = modelCosts[m];
+          return mc ? +(mc.cost / mc.calls).toFixed(4) : 0;
+        }),
+        colorByPoint: true
+      }],
+      legend: { enabled: false },
+      plotOptions: { column: { borderRadius: 4 } }
+    });
+  }
+
+  // Capacity chart
+  if (document.getElementById('chart-capacity')) {
+    Highcharts.chart('chart-capacity', {
+      chart: { type: 'bar' },
+      title: { text: null },
+      xAxis: {
+        categories: ['Pro', 'Max 5x', 'Max 20x'],
+        labels: { style: { color: '#94a3b8' } }
+      },
+      yAxis: {
+        title: { text: 'Estimated tokens (billions)', style: { color: '#94a3b8' } },
+        labels: { style: { color: '#94a3b8' } }
+      },
+      tooltip: {
+        formatter: function() {
+          return '<b>' + this.x + '</b><br>' + this.series.name + ': ' + this.y.toFixed(1) + 'B tokens';
+        }
+      },
+      series: [
+        {
+          name: 'Optimized (99% cache)',
+          data: [
+            +(PLAN_PRICES.pro / 4.3 / 0.549 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_5 / 4.3 / 0.549 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_20 / 4.3 / 0.549 * 1000).toFixed(1) / 1000
+          ],
+          color: '#34d399'
+        },
+        {
+          name: 'Typical (90% cache)',
+          data: [
+            +(PLAN_PRICES.pro / 4.3 / 0.795 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_5 / 4.3 / 0.795 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_20 / 4.3 / 0.795 * 1000).toFixed(1) / 1000
+          ],
+          color: '#60a5fa'
+        },
+        {
+          name: 'No caching',
+          data: [
+            +(PLAN_PRICES.pro / 4.3 / 5.5 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_5 / 4.3 / 5.5 * 1000).toFixed(1) / 1000,
+            +(PLAN_PRICES.max_20 / 4.3 / 5.5 * 1000).toFixed(1) / 1000
+          ],
+          color: '#f87171'
+        }
+      ],
+      plotOptions: { bar: { borderRadius: 4, groupPadding: 0.15 } }
+    });
+  }
+}
+
+loadAnalysis().catch(e => {
+  console.error('Analysis load failed:', e);
+  document.getElementById('content').innerHTML = '<p style="color:#f87171">Failed to load analysis data.</p>';
+});
+</script>
+</body>
+</html>

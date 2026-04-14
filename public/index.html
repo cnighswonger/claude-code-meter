@@ -218,7 +218,7 @@ function renderCharts(analyses) {
 
     const pro = 20, max5 = 100, max20 = 200;
 
-    grid.innerHTML += '<div class="chart-card full-width"><h3>Subscription Value — API-Equivalent Cost vs Plan Price</h3><div class="chart-container" id="chart-cost" style="height:350px"></div></div>';
+    grid.innerHTML += '<div class="chart-card full-width"><h3>Subscription Value — API-Equivalent Cost vs Plan Price <a href="/analysis.html" style="font-size:0.75rem;color:#60a5fa;font-weight:400;margin-left:12px">Deep Analysis →</a></h3><div class="chart-container" id="chart-cost" style="height:350px"></div></div>';
     setTimeout(() => {
       Highcharts.chart('chart-cost', {
         chart: { type: 'bar' },
