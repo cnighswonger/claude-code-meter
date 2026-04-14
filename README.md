@@ -1,5 +1,7 @@
 # claude-code-meter
 
+[![npm](https://img.shields.io/npm/v/claude-code-meter?color=blue)](https://www.npmjs.com/package/claude-code-meter) [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT) [![Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://meter.veritassuperaitsolutions.com)
+
 Community usage metrics collector for Claude Code. Captures anonymized billing data from API responses and provides session-level cost modeling through statistical analysis.
 
 **Live dashboard:** [meter.veritassuperaitsolutions.com](https://meter.veritassuperaitsolutions.com)
