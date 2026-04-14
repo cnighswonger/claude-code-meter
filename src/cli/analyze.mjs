@@ -1,6 +1,57 @@
 import { readAllRows, groupBySession } from "../log/reader.mjs";
-import { LOG_FILE, DEFAULT_SERVER } from "../constants.mjs";
+import { LOG_FILE, DEFAULT_SERVER, KNOWN_RATES, RATES_LAST_VERIFIED, RATES_SOURCE_URL } from "../constants.mjs";
 import { getInstallId, getConsentStatus, requestConsent } from "../consent.mjs";
+
+/**
+ * Compute API-equivalent cost for a set of rows using published rates.
+ * Returns { total, breakdown_by_model, cache_savings, no_cache_cost }
+ */
+function computeApiCost(rows) {
+  let total = 0;
+  let noCacheTotal = 0;
+  const byModel = {};
+
+  for (const r of rows) {
+    // Match model to rates — strip date suffix, try progressively shorter names
+    const modelKey = r.model?.replace(/-\d{8}$/, "") || "";
+    const rates = KNOWN_RATES[modelKey]?.standard;
+    if (!rates) continue;
+
+    const inputCost = (r.input_tokens || 0) * rates.input / 1_000_000;
+    const outputCost = (r.output_tokens || 0) * rates.output / 1_000_000;
+    const cacheReadCost = (r.cache_read_input_tokens || 0) * rates.cache_read / 1_000_000;
+
+    // Determine cache write tier from ephemeral fields
+    const is1h = (r.ephemeral_1h_input_tokens || 0) > 0;
+    const writeRate = is1h ? rates.cache_write_1h : rates.cache_write_5m;
+    const cacheWriteCost = (r.cache_creation_input_tokens || 0) * writeRate / 1_000_000;
+
+    const callCost = inputCost + outputCost + cacheReadCost + cacheWriteCost;
+    total += callCost;
+
+    // What would this have cost without any caching?
+    const totalInputTokens = (r.input_tokens || 0) + (r.cache_read_input_tokens || 0) + (r.cache_creation_input_tokens || 0);
+    const noCacheCost = totalInputTokens * rates.input / 1_000_000 + outputCost;
+    noCacheTotal += noCacheCost;
+
+    if (!byModel[modelKey]) byModel[modelKey] = { cost: 0, calls: 0 };
+    byModel[modelKey].cost += callCost;
+    byModel[modelKey].calls++;
+  }
+
+  return {
+    total_api_cost: +total.toFixed(4),
+    no_cache_cost: +noCacheTotal.toFixed(4),
+    cache_savings: +(noCacheTotal - total).toFixed(4),
+    cache_savings_pct: noCacheTotal > 0 ? +((1 - total / noCacheTotal) * 100).toFixed(1) : 0,
+    by_model: Object.fromEntries(
+      Object.entries(byModel).map(([m, d]) => [m, { cost: +d.cost.toFixed(4), calls: d.calls }])
+    ),
+    rates_verified: RATES_LAST_VERIFIED,
+    rates_source: RATES_SOURCE_URL,
+    disclaimer: "Estimates based on published API rates. Subscription billing may differ. Verify at source URL.",
+  };
+}
 
 /**
  * OLS regression: y = Xβ + ε
@@ -256,6 +307,7 @@ export async function analyzeCommand(args) {
         { n_calls: g.calls, avg_q5h_per_turn: +(g.q5hSum / g.calls).toFixed(6) },
       ])
     ),
+    cost_analysis: computeApiCost(rows),
   };
 
   if (args.share) {
