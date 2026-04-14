@@ -233,6 +233,13 @@ const server = createServer(async (req, res) => {
         return json(res, 400, { error: "Invalid JSON" });
       }
 
+      // Consent gate — analysis submissions require a consent token
+      if (payload.ols && !payload.consent_token) {
+        return json(res, 403, {
+          error: "Consent token required. Run 'claude-meter consent' to grant data sharing consent.",
+        });
+      }
+
       // Try both schemas — SharePayload (session summary) or AnalysisSummary (regression output)
       const shareResult = SharePayloadSchema.safeParse(payload);
       if (shareResult.success) {

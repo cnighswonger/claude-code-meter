@@ -1,24 +1,6 @@
 import { readAllRows, groupBySession } from "../log/reader.mjs";
-import { LOG_FILE, DEFAULT_SERVER, CONFIG_FILE } from "../constants.mjs";
-import { createInterface } from "node:readline";
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { randomBytes } from "node:crypto";
-
-/**
- * Get or create a stable install hash for dedup.
- * Stored in ~/.claude/claude-meter-config.json, never transmitted raw.
- */
-function getInstallHash() {
-  let config = {};
-  try {
-    if (existsSync(CONFIG_FILE)) config = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
-  } catch {}
-  if (!config.install_hash) {
-    config.install_hash = randomBytes(8).toString("hex");
-    try { writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); } catch {}
-  }
-  return config.install_hash;
-}
+import { LOG_FILE, DEFAULT_SERVER } from "../constants.mjs";
+import { getInstallId, getConsentStatus, requestConsent } from "../consent.mjs";
 
 /**
  * OLS regression: y = Xβ + ε
@@ -243,7 +225,7 @@ export async function analyzeCommand(args) {
   const summary = {
     v: 1,
     generated_at: new Date().toISOString(),
-    install_id: getInstallHash(),
+    install_id: getInstallId(),
     data_range: {
       start: rows[0].ts,
       end: rows[rows.length - 1].ts,
@@ -277,23 +259,21 @@ export async function analyzeCommand(args) {
   };
 
   if (args.share) {
+    // Consent gate — first-run requires interactive consent, subsequent runs honor --yes
+    const consentToken = await requestConsent(args.yes);
+    if (!consentToken) {
+      // Still output the analysis locally even if consent denied
+      console.log(JSON.stringify(summary, null, 2));
+      return summary;
+    }
+
+    // Add consent token to submission
+    summary.consent_token = consentToken;
+
     const jsonStr = JSON.stringify(summary, null, 2);
     console.log("Data to share:\n");
     console.log(jsonStr);
-    console.log(`\nSize: ${JSON.stringify(summary).length} bytes`);
-    console.log("\nThis contains ONLY aggregate statistics. No prompts, file paths, request IDs, or timestamps more precise than the session date range.\n");
-
-    if (!args.yes) {
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const answer = await new Promise((resolve) => {
-        rl.question("Submit to community dataset? [y/N] ", resolve);
-      });
-      rl.close();
-      if (answer.toLowerCase() !== "y") {
-        console.log("Cancelled.");
-        return summary;
-      }
-    }
+    console.log(`\nSize: ${JSON.stringify(summary).length} bytes | Consent: ${consentToken.slice(0, 8)}...`);
 
     const endpoint = args.endpoint || DEFAULT_SERVER;
     const url = `${endpoint}/api/v1/submit`;

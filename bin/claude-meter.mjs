@@ -39,6 +39,8 @@ Commands:
   history             Daily/weekly usage aggregates
   rates               Estimated billing rates via regression analysis
   analyze             Session-level cost model regression (the good stuff)
+  consent             Grant consent for anonymous data sharing (required before --share)
+  opt-out             Revoke data sharing consent (immediate, permanent until re-consented)
   share               Submit anonymized data to community dataset
   setup               Install interceptor and configure sharing
 
@@ -89,6 +91,16 @@ switch (command) {
   case "analyze": {
     const { analyzeCommand } = await import("../src/cli/analyze.mjs");
     await analyzeCommand({ ...args, share: values.share, logFile: values["log-file"] });
+    break;
+  }
+  case "consent": {
+    const { requestConsent } = await import("../src/consent.mjs");
+    await requestConsent(false);
+    break;
+  }
+  case "opt-out": {
+    const { revokeConsent } = await import("../src/consent.mjs");
+    revokeConsent();
     break;
   }
   case "setup": {
