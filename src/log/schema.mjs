@@ -9,6 +9,8 @@ export const MeterRowSchema = z.strictObject({
 
   // Model
   model: z.string().max(64).regex(/^[a-z0-9._-]+$/),
+  requested_model: z.string().max(64).regex(/^[a-z0-9._-]*$/).optional(),
+  model_mismatch: z.boolean().optional(),
   speed: z.enum(["standard", "fast", ""]),
   service_tier: z.string().max(32).regex(/^[a-z0-9_-]*$/),
 

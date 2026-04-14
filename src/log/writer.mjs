@@ -34,6 +34,8 @@ export function buildRow(usage, headers, sessionHash) {
     sid: sessionHash,
 
     model: usage._model || "",
+    requested_model: usage._requested_model || "",
+    model_mismatch: !!(usage._requested_model && usage._model && usage._requested_model !== usage._model),
     speed: usage.speed || "",
     service_tier: usage.service_tier || "",
 

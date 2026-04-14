@@ -309,6 +309,30 @@ export async function analyzeCommand(args) {
       ])
     ),
     cost_analysis: computeApiCost(rows),
+    model_spoofing: (() => {
+      const mismatches = rows.filter(r => r.model_mismatch);
+      if (mismatches.length === 0 && !rows.some(r => r.requested_model)) {
+        return { status: "not_tracked", note: "Upgrade claude-code-meter to capture requested_model" };
+      }
+      if (mismatches.length === 0) {
+        return { status: "none_detected", checked: rows.filter(r => r.requested_model).length };
+      }
+      const transitions = [];
+      for (const m of mismatches) {
+        transitions.push({ requested: m.requested_model, served: m.model });
+      }
+      const grouped = {};
+      for (const t of transitions) {
+        const key = `${t.requested} → ${t.served}`;
+        grouped[key] = (grouped[key] || 0) + 1;
+      }
+      return {
+        status: "detected",
+        total_mismatches: mismatches.length,
+        mismatch_rate: +(mismatches.length / rows.length * 100).toFixed(2),
+        transitions: grouped,
+      };
+    })(),
   };
 
   if (args.share) {

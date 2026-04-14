@@ -66,6 +66,16 @@ export function installFetchPatch() {
 
     if (!isMessagesEndpoint) return response;
 
+    // Extract requested model from outgoing request (model field only, never prompts)
+    let requestedModel = "";
+    try {
+      if (options?.body) {
+        const bodyStr = typeof options.body === "string" ? options.body : "";
+        const modelMatch = bodyStr.match(/"model"\s*:\s*"([^"]+)"/);
+        if (modelMatch) requestedModel = modelMatch[1];
+      }
+    } catch {}
+
     // Extract headers synchronously (no body access needed)
     let headers;
     try {
@@ -80,6 +90,7 @@ export function installFetchPatch() {
       drainUsageFromClone(clone)
         .then((usage) => {
           if (!usage) return;
+          usage._requested_model = requestedModel;
           const row = buildRow(usage, headers, getSessionHash());
           if (row) appendRow(row);
         })
