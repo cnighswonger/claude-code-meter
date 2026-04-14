@@ -201,6 +201,83 @@ function renderStatsRow(stats, analysisCount) {
 function renderCharts(analyses) {
   const grid = document.getElementById('chart-grid');
 
+  // 0. Cost comparison — API rates vs subscription tiers
+  const costData = analyses.filter(a => a.cost_analysis?.total_api_cost > 0);
+  if (costData.length > 0) {
+    // Aggregate across all submissions
+    const totalApiCost = costData.reduce((s, a) => s + a.cost_analysis.total_api_cost, 0);
+    const totalNoCacheCost = costData.reduce((s, a) => s + a.cost_analysis.no_cache_cost, 0);
+    const totalCacheSavings = costData.reduce((s, a) => s + a.cost_analysis.cache_savings, 0);
+    const savingsPct = costData[0].cost_analysis.cache_savings_pct;
+
+    // Estimate monthly cost (scale to 30 days from data range)
+    const firstDate = new Date(costData[0].data_range?.start || Date.now());
+    const lastDate = new Date(costData[costData.length - 1].data_range?.end || Date.now());
+    const daySpan = Math.max(1, (lastDate - firstDate) / 86400000);
+    const monthlyApiCost = +(totalApiCost / daySpan * 30).toFixed(0);
+
+    const pro = 20, max5 = 100, max20 = 200;
+
+    grid.innerHTML += '<div class="chart-card full-width"><h3>Subscription Value — API-Equivalent Cost vs Plan Price</h3><div class="chart-container" id="chart-cost" style="height:350px"></div></div>';
+    setTimeout(() => {
+      Highcharts.chart('chart-cost', {
+        chart: { type: 'bar' },
+        title: { text: null },
+        subtitle: {
+          text: `Based on ${costData.reduce((s,a) => s + a.n_calls, 0).toLocaleString()} API calls over ${daySpan.toFixed(0)} days. Rates: platform.claude.com/docs (verified ${costData[0].cost_analysis.rates_verified}). Estimates only — subscription billing may differ.`,
+          style: { color: '#64748b', fontSize: '10px' }
+        },
+        xAxis: {
+          categories: [
+            'Without caching',
+            'With caching (API rate)',
+            'Monthly projection (API)',
+            'Max 20x ($200/mo)',
+            'Max 5x ($100/mo)',
+            'Pro ($20/mo)'
+          ],
+          labels: { style: { color: '#cbd5e1' } }
+        },
+        yAxis: {
+          title: { text: 'USD', style: { color: '#94a3b8' } },
+          labels: {
+            formatter: function() { return '$' + this.value.toLocaleString(); },
+            style: { color: '#94a3b8' }
+          }
+        },
+        tooltip: {
+          formatter: function() {
+            let tip = '<b>' + this.x + '</b>: $' + this.y.toLocaleString();
+            if (this.x.includes('Without')) tip += '<br>What your usage would cost with zero cache hits';
+            if (this.x.includes('With caching')) tip += '<br>Actual cost at published API rates with caching';
+            if (this.x.includes('Monthly')) tip += '<br>Projected from ' + daySpan.toFixed(0) + ' days of data';
+            if (this.x.includes('Max 5x')) tip += '<br>Value multiplier: ' + (totalApiCost / max5).toFixed(1) + 'x';
+            if (this.x.includes('Max 20x')) tip += '<br>Value multiplier: ' + (totalApiCost / max20).toFixed(1) + 'x';
+            if (this.x.includes('Pro')) tip += '<br>Value multiplier: ' + (totalApiCost / pro).toFixed(1) + 'x';
+            return tip;
+          }
+        },
+        legend: { enabled: false },
+        plotOptions: { bar: { borderRadius: 4, dataLabels: {
+          enabled: true,
+          formatter: function() { return '$' + this.y.toLocaleString(); },
+          style: { color: '#e2e8f0', fontSize: '12px', textOutline: 'none' }
+        }}},
+        series: [{
+          name: 'Cost',
+          data: [
+            { y: +totalNoCacheCost.toFixed(0), color: '#f87171' },
+            { y: +totalApiCost.toFixed(0), color: '#60a5fa' },
+            { y: monthlyApiCost, color: '#818cf8' },
+            { y: max20, color: '#34d399' },
+            { y: max5, color: '#34d399' },
+            { y: pro, color: '#34d399' }
+          ]
+        }]
+      });
+    }, 0);
+  }
+
   // 1. R-squared distribution
   const rSquareds = analyses.map(a => a.ols?.r_squared).filter(v => v != null);
   if (rSquareds.length > 0) {
