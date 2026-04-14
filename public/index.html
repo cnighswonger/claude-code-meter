@@ -423,6 +423,13 @@ loadDashboard().catch(e => {
   console.error('Dashboard load failed:', e);
   document.getElementById('empty-state').style.display = 'block';
 });
+
+// Auto-refresh every 5 minutes
+setInterval(() => {
+  document.getElementById('chart-grid').innerHTML = '';
+  document.getElementById('chart-grid-bottom').innerHTML = '';
+  loadDashboard().catch(() => {});
+}, 300000);
 </script>
 </body>
 </html>

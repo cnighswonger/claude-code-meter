@@ -1,6 +1,24 @@
 import { readAllRows, groupBySession } from "../log/reader.mjs";
-import { LOG_FILE, DEFAULT_SERVER } from "../constants.mjs";
+import { LOG_FILE, DEFAULT_SERVER, CONFIG_FILE } from "../constants.mjs";
 import { createInterface } from "node:readline";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+
+/**
+ * Get or create a stable install hash for dedup.
+ * Stored in ~/.claude/claude-meter-config.json, never transmitted raw.
+ */
+function getInstallHash() {
+  let config = {};
+  try {
+    if (existsSync(CONFIG_FILE)) config = JSON.parse(readFileSync(CONFIG_FILE, "utf-8"));
+  } catch {}
+  if (!config.install_hash) {
+    config.install_hash = randomBytes(8).toString("hex");
+    try { writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2)); } catch {}
+  }
+  return config.install_hash;
+}
 
 /**
  * OLS regression: y = Xβ + ε
@@ -225,6 +243,7 @@ export async function analyzeCommand(args) {
   const summary = {
     v: 1,
     generated_at: new Date().toISOString(),
+    install_id: getInstallHash(),
     data_range: {
       start: rows[0].ts,
       end: rows[rows.length - 1].ts,
