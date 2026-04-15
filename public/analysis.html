@@ -178,7 +178,7 @@ async function loadAnalysis() {
   // Section 1: Subscription Value Multipliers
   html += '<div class="card"><h3>Subscription Value Multipliers</h3>';
   html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">How much API-equivalent value each subscription tier delivers, based on observed usage.</p>';
-  html += '<table><tr><th>Plan</th><th class="ctr">Monthly Price</th><th class="ctr">Est. API-Equivalent Value</th><th class="ctr">Value Multiplier</th></tr>';
+  html += '<table><tr><th>Plan</th><th class="ctr">Monthly Price</th><th class="ctr">Est. API-Equivalent Value</th><th class="ctr">Value Multiplier</th><th class="ctr">Cost per Unit</th></tr>';
 
   // Our observed data is from Max 5x. Scale for other tiers using the plan multipliers.
   const observedMonthlyApiCost = totalApiCost / daySpan * 30;
@@ -190,14 +190,20 @@ async function loadAnalysis() {
     const tierMultiplier = PLAN_MULTIPLIERS[tier];
     const scaledApiValue = observedMonthlyApiCost * (tierMultiplier / observedMultiplier);
     const valueMultiplier = scaledApiValue / price;
+    const costPerUnit = price / tierMultiplier;
     html += `<tr>`;
     html += `<td>${PLAN_LABELS[tier]}</td>`;
     html += `<td class="ctr">$${price}</td>`;
     html += `<td class="ctr highlight">$${scaledApiValue.toFixed(0)}</td>`;
     html += `<td class="ctr good">${valueMultiplier.toFixed(1)}x</td>`;
+    html += `<td class="ctr">$${costPerUnit.toFixed(0)}/x</td>`;
     html += `</tr>`;
   }
-  html += '<tr><td colspan="4" style="color:#64748b;font-size:0.8rem;padding-top:8px">API-equivalent values for Pro and Max 20x are estimated by scaling Max 5x observed data by the tier multiplier ratio (1x:5x:20x). Actual usage varies by workload.</td></tr>';
+  html += '<tr><td colspan="5" style="color:#94a3b8;font-size:0.8rem;padding-top:12px;line-height:1.5">' +
+    '<strong>Why are Pro and Max 5x the same multiplier?</strong> Pro ($20) buys 1x capacity. Max 5x ($100) buys 5x — both cost $20 per unit of capacity, so the value multiplier is identical. ' +
+    'Max 20x ($200) buys 20x capacity at $10 per unit — half the cost per unit, making it the best value per dollar. ' +
+    'The multiplier difference reflects Anthropic\'s pricing structure, not a data artifact.</td></tr>';
+  html += '<tr><td colspan="5" style="color:#64748b;font-size:0.8rem;padding-top:4px">API-equivalent values for Pro and Max 20x are estimated by scaling Max 5x observed data by the tier multiplier ratio (1x:5x:20x). Actual usage varies by workload.</td></tr>';
   html += '</table></div>';
 
   // Section 2: Token Cost Against Quota
