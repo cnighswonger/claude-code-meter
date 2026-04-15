@@ -1,6 +1,6 @@
 {
   "name": "claude-code-meter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Community usage metrics collector for Claude Code — anonymized billing analysis and cost modeling",
   "type": "module",
   "bin": {
