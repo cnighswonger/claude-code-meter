@@ -178,22 +178,26 @@ async function loadAnalysis() {
   // Section 1: Subscription Value Multipliers
   html += '<div class="card"><h3>Subscription Value Multipliers</h3>';
   html += '<p style="color:#94a3b8;font-size:0.85rem;margin-bottom:12px">How much API-equivalent value each subscription tier delivers, based on observed usage.</p>';
-  html += '<table><tr><th>Plan</th><th class="ctr">Monthly Price</th><th class="ctr">API-Equivalent Value (observed)</th><th class="ctr">Value Multiplier</th><th class="ctr">Effective $/MTok (output)</th></tr>';
+  html += '<table><tr><th>Plan</th><th class="ctr">Monthly Price</th><th class="ctr">Est. API-Equivalent Value</th><th class="ctr">Value Multiplier</th></tr>';
 
-  const monthlyApiCost = totalApiCost / daySpan * 30;
+  // Our observed data is from Max 5x. Scale for other tiers using the plan multipliers.
+  const observedMonthlyApiCost = totalApiCost / daySpan * 30;
+  const observedTier = primary.plan_tier || 'max_5';
+  const observedMultiplier = PLAN_MULTIPLIERS[observedTier] || 5;
+
   for (const [tier, price] of Object.entries(PLAN_PRICES)) {
-    const multiplier = monthlyApiCost / price;
-    // Effective rate: what users actually pay per output MTok on subscription
-    // = plan_price / (monthly output tokens / 1M)
-    const monthlyOutputTokens = (primary.model_splits?.['claude-opus-4-6']?.n_calls || totalCalls) * (coeffs.avg_output ? 1/coeffs.avg_output * 0.00001 : 400); // rough estimate
+    // Scale the observed API value by the ratio of this tier's multiplier to our observed tier
+    const tierMultiplier = PLAN_MULTIPLIERS[tier];
+    const scaledApiValue = observedMonthlyApiCost * (tierMultiplier / observedMultiplier);
+    const valueMultiplier = scaledApiValue / price;
     html += `<tr>`;
     html += `<td>${PLAN_LABELS[tier]}</td>`;
     html += `<td class="ctr">$${price}</td>`;
-    html += `<td class="ctr highlight">$${monthlyApiCost.toFixed(0)}</td>`;
-    html += `<td class="ctr good">${multiplier.toFixed(1)}x</td>`;
-    html += `<td class="ctr">$${(price / (5.5 * 30 / daySpan)).toFixed(2)}</td>`;
+    html += `<td class="ctr highlight">$${scaledApiValue.toFixed(0)}</td>`;
+    html += `<td class="ctr good">${valueMultiplier.toFixed(1)}x</td>`;
     html += `</tr>`;
   }
+  html += '<tr><td colspan="4" style="color:#64748b;font-size:0.8rem;padding-top:8px">API-equivalent values for Pro and Max 20x are estimated by scaling Max 5x observed data by the tier multiplier ratio (1x:5x:20x). Actual usage varies by workload.</td></tr>';
   html += '</table></div>';
 
   // Section 2: Token Cost Against Quota
