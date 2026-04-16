@@ -168,6 +168,19 @@ async function loadAnalysis() {
 
   let html = '';
 
+  // Check for 4.7 data and show advisory
+  const has47 = dedupedAnalyses.some(a => a.model_splits && Object.keys(a.model_splits).some(m => m.includes('4-7')));
+  if (has47) {
+    html += '<div class="disclaimer" style="border-color:#f59e0b;background:#1a1a0e">';
+    html += '<strong style="color:#f59e0b">Opus 4.7 Advisory:</strong> ';
+    html += 'Metered data shows Opus 4.7 burns Q5h quota at <strong>~2.4x the rate of Opus 4.6</strong> for equivalent visible token counts. ';
+    html += 'The gap is consistent with adaptive thinking tokens being charged against quota but not reported in the API <code>usage</code> response. ';
+    html += 'Expect your Q5h budget to go roughly half as far on 4.7. ';
+    html += '<a href="https://github.com/cnighswonger/claude-code-cache-fix/discussions/25" style="color:#60a5fa">Full analysis</a> | ';
+    html += '<a href="https://github.com/anthropics/claude-code/issues/49320" style="color:#60a5fa">Feature request: thinking_tokens</a>';
+    html += '</div>';
+  }
+
   // Key metrics
   html += '<div class="stats-row">';
   html += `<div class="stat-card"><div class="stat-value">${dedupedAnalyses.length}</div><div class="stat-label">Contributors</div></div>`;
