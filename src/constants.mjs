@@ -19,6 +19,10 @@ export const MESSAGES_ENDPOINT = "/v1/messages";
 export const RATES_LAST_VERIFIED = "2026-04-14";
 export const RATES_SOURCE_URL = "https://platform.claude.com/docs/en/docs/about-claude/pricing";
 export const KNOWN_RATES = {
+  "claude-opus-4-7": {
+    standard: { input: 5, output: 25, cache_write_5m: 6.25, cache_write_1h: 10, cache_read: 0.50 },
+    fast: { input: 30, output: 150, cache_write_5m: 37.5, cache_write_1h: 60, cache_read: 3.0 },
+  },
   "claude-opus-4-6": {
     standard: { input: 5, output: 25, cache_write_5m: 6.25, cache_write_1h: 10, cache_read: 0.50 },
     fast: { input: 30, output: 150, cache_write_5m: 37.5, cache_write_1h: 60, cache_read: 3.0 },
