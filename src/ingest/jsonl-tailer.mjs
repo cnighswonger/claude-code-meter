@@ -121,36 +121,62 @@ export class JsonlTailer {
 
     // Split on \n. Anything after the last \n is incomplete and stays for next tick.
     const lastNewline = buffer.lastIndexOf("\n");
-    let completeBlock;
-    let advance;
     if (lastNewline < 0) {
       // No complete line in this segment — wait for more.
       return { processed: 0, skipped: 0, offset };
     }
-    completeBlock = buffer.slice(0, lastNewline + 1);
-    advance = Buffer.byteLength(completeBlock, "utf8");
+    const completeBlock = buffer.slice(0, lastNewline + 1);
 
     let processed = 0;
     let skipped = 0;
+    let persistError = null;
+    let bytesConsumed = 0;
+    // split("\n") on text ending in "\n" yields a trailing empty string. We
+    // skip empties without advancing (they represent zero source bytes; the
+    // preceding "\n" is already counted in the previous line's lineBytes).
     const lines = completeBlock.split("\n");
     for (const line of lines) {
       if (!line) continue;
+      // Each non-empty line consumes its bytes plus the "\n" that split removed.
+      const lineBytes = Buffer.byteLength(line, "utf8") + 1;
+
+      // First: validate the row. Validation failures advance past the row
+      // (the line is bad data; retrying won't help).
+      let validated;
       try {
         const parsed = JSON.parse(line);
-        const validated = MeterRowSchema.parse(parsed);
-        await this.onRow(validated);
-        processed++;
+        validated = MeterRowSchema.parse(parsed);
       } catch (err) {
         debug(`skip invalid row: ${err?.message ?? err}`);
         try { await this.onSkip({ line, error: err }); } catch {}
         skipped++;
+        bytesConsumed += lineBytes;
+        continue;
       }
+
+      // Then: persist via onRow. Persistence failures DO NOT advance offset.
+      // The next tick re-reads the same row, giving the operator a chance to
+      // fix the underlying cause (disk full, permission denied, etc.) without
+      // permanently dropping data. The error is surfaced loudly via stderr
+      // and returned in `persistError` so callers can react.
+      try {
+        await this.onRow(validated);
+      } catch (err) {
+        persistError = err;
+        warn(
+          `persistence failed; offset NOT advanced (will retry on next tick): ${err?.message ?? err}`,
+        );
+        break;
+      }
+
+      processed++;
+      bytesConsumed += lineBytes;
     }
 
-    const newOffset = offset + advance;
+    const newOffset = offset + bytesConsumed;
     await this.saveOffset(newOffset);
 
-    return { processed, skipped, offset: newOffset };
+    return { processed, skipped, offset: newOffset, persistError };
   }
 
   /**

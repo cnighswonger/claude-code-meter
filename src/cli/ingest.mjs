@@ -12,8 +12,9 @@ import { dirname } from "node:path";
 import { JsonlTailer } from "../ingest/jsonl-tailer.mjs";
 import { PROXY_LOG_FILE, INGEST_OFFSET_FILE, LOG_FILE } from "../constants.mjs";
 
-function fmtSummary({ processed, skipped, offset }) {
-  return `processed=${processed} skipped=${skipped} offset=${offset}`;
+function fmtSummary({ processed, skipped, offset, persistError }) {
+  const base = `processed=${processed} skipped=${skipped} offset=${offset}`;
+  return persistError ? `${base} persistError=${persistError.message ?? persistError}` : base;
 }
 
 async function confirm(question) {
@@ -47,18 +48,18 @@ export async function ingestCommand(args = {}) {
 
   // Persist each validated row into the local store so analyze / share /
   // status / history / rates see proxy data transparently.
+  //
+  // appendFileSync errors are NOT swallowed — they propagate out of onRow,
+  // and the tailer treats that as a persistence failure (NOT a validation
+  // failure): it does NOT advance the offset past the failed row and
+  // returns `persistError` in the tick result. The next tick re-reads the
+  // same row, so the operator can fix the underlying cause (disk full,
+  // permission denied, etc.) without losing data permanently.
   const tailer = new JsonlTailer({
     source,
     offsetFile,
     onRow: (row) => {
-      try {
-        appendFileSync(sink, JSON.stringify(row) + "\n");
-      } catch (err) {
-        // Fail-open on write errors; the offset will still advance and the
-        // count of "processed" reflects validation success, but missing
-        // rows are surfaced via stderr so the operator can investigate.
-        process.stderr.write(`[claude-meter ingest] WARN: append to ${sink} failed: ${err?.message ?? err}\n`);
-      }
+      appendFileSync(sink, JSON.stringify(row) + "\n");
     },
     onSkip: () => {},
   });
@@ -78,6 +79,7 @@ export async function ingestCommand(args = {}) {
   if (!watch) {
     const result = await tailer.tickOnce();
     console.log(`ingest --once: ${fmtSummary(result)}`);
+    if (result.persistError) process.exitCode = 1;
     return result;
   }
 

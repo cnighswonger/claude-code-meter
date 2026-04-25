@@ -93,6 +93,54 @@ test("CLI: ingest --once on missing source warns and exits cleanly", async () =>
   }
 });
 
+test("CLI: persistence failure does NOT advance offset (next tick retries)", async () => {
+  // Wire a tailer directly with an onRow that throws on the second row to
+  // prove the tailer doesn't permanently drop rows on sink write failures.
+  const { JsonlTailer } = await import("../src/ingest/jsonl-tailer.mjs");
+  const dir = await newTmp();
+  try {
+    const source = join(dir, "usage.jsonl");
+    const offsetFile = join(dir, ".offset");
+    const { writeFile, readFile } = await import("node:fs/promises");
+    await writeFile(
+      source,
+      JSON.stringify(validRow(1)) + "\n" + JSON.stringify(validRow(2)) + "\n" + JSON.stringify(validRow(3)) + "\n",
+    );
+
+    let callCount = 0;
+    const tailer = new JsonlTailer({
+      source,
+      offsetFile,
+      onRow: () => {
+        callCount++;
+        if (callCount === 2) throw new Error("simulated disk full");
+      },
+    });
+
+    const r1 = await tailer.tickOnce();
+    assert.equal(r1.processed, 1, "only the first row counted as processed before failure");
+    assert.ok(r1.persistError, "result must surface persistError");
+    assert.match(String(r1.persistError.message), /disk full/);
+
+    // Saved offset must NOT include row 2 or row 3 — only row 1's bytes.
+    const persisted = JSON.parse(await readFile(offsetFile, "utf8"));
+    const row1Bytes = Buffer.byteLength(JSON.stringify(validRow(1)) + "\n", "utf8");
+    assert.equal(persisted.offset, row1Bytes, "offset must stop at row 1's end, NOT advance through the failure");
+
+    // Now retry with an onRow that succeeds: rows 2 and 3 should both process.
+    const tailer2 = new JsonlTailer({
+      source,
+      offsetFile,
+      onRow: () => {},
+    });
+    const r2 = await tailer2.tickOnce();
+    assert.equal(r2.processed, 2, "after retry, previously-failed row and the next row both process");
+    assert.equal(r2.persistError, null);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("CLI: ingest persistence dedups across runs via offset file", async () => {
   const origLog = console.log;
   console.log = () => {};
