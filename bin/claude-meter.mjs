@@ -26,6 +26,11 @@ const { values, positionals } = parseArgs({
     share: { type: "boolean" },
     fit: { type: "boolean" },
     "log-file": { type: "string" },
+    // ingest subcommand
+    source: { type: "string" },
+    once: { type: "boolean" },
+    watch: { type: "boolean" },
+    "reset-offset": { type: "boolean" },
   },
 });
 
@@ -43,6 +48,7 @@ Commands:
   opt-out             Revoke data sharing consent (immediate, permanent until re-consented)
   share               Submit anonymized data to community dataset
   setup               Install interceptor and configure sharing
+  ingest              Ingest validated rows from cache-fix proxy's usage.jsonl
 
 Options:
   -s, --session <id>  Target a specific session
@@ -52,6 +58,10 @@ Options:
   -c, --community     Use community dataset for rates
   --share             Include share preview with analyze output
   --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
+  --source <path>     ingest: path to proxy usage.jsonl (default: ~/.claude/usage.jsonl)
+  --once              ingest: read to current EOF and exit (default behavior)
+  --watch             ingest: tick periodically until Ctrl-C
+  --reset-offset      ingest: delete offset file before reading (re-process from start)
   -y, --yes           Skip confirmation prompts
   -h, --help          Show this help
 `);
@@ -106,6 +116,17 @@ switch (command) {
   case "setup": {
     const { setupCommand } = await import("../src/cli/setup.mjs");
     await setupCommand(args);
+    break;
+  }
+  case "ingest": {
+    const { ingestCommand } = await import("../src/cli/ingest.mjs");
+    await ingestCommand({
+      source: values.source,
+      once: values.once,
+      watch: values.watch,
+      resetOffset: values["reset-offset"],
+      yes: values.yes,
+    });
     break;
   }
   default:

@@ -8,6 +8,13 @@ export const LOG_FILE = join(CLAUDE_DIR, "claude-meter.jsonl");
 export const CONFIG_FILE = join(CLAUDE_DIR, "claude-meter-config.json");
 export const MESSAGES_ENDPOINT = "/v1/messages";
 
+// Proxy-mode ingestion sources (see docs/directives/proxy-ingest.md).
+// Cache-fix proxy v3.2.0+ writes MeterRowSchema v:1 records to PROXY_LOG_FILE
+// when its `usage-log` extension is enabled. We tail forward from
+// INGEST_OFFSET_FILE to avoid re-processing rows across restarts.
+export const PROXY_LOG_FILE = join(CLAUDE_DIR, "usage.jsonl");
+export const INGEST_OFFSET_FILE = join(CLAUDE_DIR, ".claude-meter-ingest-offset");
+
 // Official API pricing ($/MTok)
 // Source: https://platform.claude.com/docs/en/docs/about-claude/pricing
 // Last verified: 2026-04-14

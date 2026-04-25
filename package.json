@@ -1,13 +1,10 @@
 {
   "name": "claude-code-meter",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Community usage metrics collector for Claude Code — anonymized billing analysis and cost modeling",
   "type": "module",
   "bin": {
     "claude-meter": "bin/claude-meter.mjs"
-  },
-  "exports": {
-    "./preload": "./src/interceptor/preload.mjs"
   },
   "files": [
     "bin/",
