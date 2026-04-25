@@ -33,22 +33,39 @@ One user sees one usage pattern. Many users see the full rate surface. claude-co
 npm install -g claude-code-meter
 ```
 
-Add the interceptor to your Claude Code wrapper:
+**Required collector:** since v0.4.0, claude-meter ingests data written by the [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix) proxy (>= 3.2.0). The proxy emits `MeterRowSchema` v:1 records to `~/.claude/usage.jsonl`; claude-meter reads from that file. The legacy `NODE_OPTIONS=--import` preload no longer works on Claude Code v2.1.113+ because the Bun binary ignores `NODE_OPTIONS`.
 
 ```bash
-# In your ~/bin/claude or wrapper script, add to NODE_OPTIONS:
-NODE_OPTIONS="--import $(npm root -g)/claude-code-meter/src/interceptor/preload.mjs"
+# 1. Install the proxy (once)
+npm install -g claude-code-cache-fix
+cache-fix-proxy install-service
+
+# 2. Enable the usage-log extension by editing
+#    ~/.config/cache-fix-proxy/extensions.json (or your installed proxy/extensions.json)
+#    and adding:
+#      "usage-log": { "enabled": true, "order": 650 }
+
+# 3. Restart the proxy and start ingesting
+systemctl --user restart cache-fix-proxy
+claude-meter ingest --watch
 ```
 
-If you're already using [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix), add the meter as a second `--import` — cache-fix first (modifies requests), meter second (reads responses).
+`claude-meter ingest` validates each row against the strict v:1 schema and **persists each valid row into `~/.claude/claude-meter.jsonl`** — the same local store that `analyze`, `share`, `status`, `history`, and `rates` already read from. No downstream command changes are needed; proxy-ingested rows are visible to all existing readers transparently. Old preload-format rows in any pre-existing source files are skipped (debug-logged when `CLAUDE_METER_DEBUG=1`). Requires Node.js 18+.
 
-Requires Node.js 18+ and the Claude Code npm package (not the standalone binary).
+> **Deprecation**: the `src/interceptor/preload.mjs` entry point still loads under Node-binary CC ≤ v2.1.112 but emits a deprecation warning on every invocation. The npm `./preload` export was removed in v0.4.0. The entry point itself is scheduled for removal in v1.0.0.
 
 ## Usage
 
 ### Collect data
 
-Once installed, the interceptor runs automatically on every Claude Code session. Data is written to `~/.claude/claude-meter.jsonl`.
+Run `claude-meter ingest` (or `--watch` for continuous tailing) to pull rows from the proxy's `~/.claude/usage.jsonl`. The ingest command persists a byte offset to `~/.claude/.claude-meter-ingest-offset` so subsequent runs only process new rows. Ingest commands:
+
+```bash
+claude-meter ingest                    # read to current EOF, exit
+claude-meter ingest --watch            # tick every 1s until Ctrl-C
+claude-meter ingest --source <path>    # override source file path
+claude-meter ingest --reset-offset     # re-process from start (asks before deleting offset)
+```
 
 ### Analyze your cost model
 
