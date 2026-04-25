@@ -50,7 +50,7 @@ systemctl --user restart cache-fix-proxy
 claude-meter ingest --watch
 ```
 
-`claude-meter ingest` validates each row against the strict v:1 schema; old preload-format rows in any pre-existing files are skipped. Requires Node.js 18+.
+`claude-meter ingest` validates each row against the strict v:1 schema and **persists each valid row into `~/.claude/claude-meter.jsonl`** — the same local store that `analyze`, `share`, `status`, `history`, and `rates` already read from. No downstream command changes are needed; proxy-ingested rows are visible to all existing readers transparently. Old preload-format rows in any pre-existing source files are skipped (debug-logged when `CLAUDE_METER_DEBUG=1`). Requires Node.js 18+.
 
 > **Deprecation**: the `src/interceptor/preload.mjs` entry point still loads under Node-binary CC ≤ v2.1.112 but emits a deprecation warning on every invocation. The npm `./preload` export was removed in v0.4.0. The entry point itself is scheduled for removal in v1.0.0.
 
