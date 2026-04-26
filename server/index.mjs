@@ -22,6 +22,8 @@ import { randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
 
+import { computeStatsAggregate } from "./stats-aggregate.mjs";
+
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const PUBLIC_DIR = join(__dirname, "..", "public");
 
@@ -309,22 +311,11 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    // GET /api/v1/stats
+    // GET /api/v1/stats — see computeStatsAggregate below for the aggregation
+    // contract (handles both SharePayloadSchema and analysis submissions).
     if (method === "GET" && path === "/api/v1/stats") {
       const rows = readAllSubmissions();
-      const models = new Map();
-      let totalTurns = 0;
-      for (const r of rows) {
-        models.set(r.model, (models.get(r.model) || 0) + 1);
-        totalTurns += r.turn_count || 0;
-      }
-      return json(res, 200, {
-        total_submissions: rows.length,
-        total_turns: totalTurns,
-        models: Object.fromEntries(models),
-        earliest: rows.length > 0 ? rows[0].date : null,
-        latest: rows.length > 0 ? rows[rows.length - 1].date : null,
-      });
+      return json(res, 200, computeStatsAggregate(rows));
     }
 
     // GET /api/v1/schema
