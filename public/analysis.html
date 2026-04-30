@@ -93,7 +93,7 @@
 <div id="content"><p style="color:#64748b">Loading analysis data...</p></div>
 
 <footer>
-  <a href="https://veritassuperaitsolutions.com">Veritas Supera IT Solutions LLC</a> |
+  <a href="https://vsits.co">Veritas Supera IT Solutions LLC</a> |
   <a href="https://github.com/cnighswonger/claude-code-meter">Source</a> |
   <a href="/">Dashboard</a> |
   <a href="https://buymeacoffee.com/vsits" title="Buy us a coffee"><img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="coffee" style="height:16px;vertical-align:middle;opacity:0.6"></a>
@@ -303,7 +303,7 @@ async function loadAnalysis() {
   html += `<tr><td>Cache hit rate (avg)</td><td class="ctr good">${avgCacheSavingsPct.toFixed(0)}%</td><td>Cache optimization is the primary value driver</td></tr>`;
   html += `<tr><td>Cost exponent (mean)</td><td class="ctr">${(primary.exponents?.mean || 0).toFixed(2)}</td><td>${(primary.exponents?.mean || 0) < 1.1 ? 'Approximately linear — cost per turn is stable' : 'Superlinear — cost per turn increases over session'}</td></tr>`;
   html += '</table>';
-  html += '<p style="color:#64748b;font-size:0.8rem;margin-top:12px">The "5x" multiplier is applied to an undefined base. See <a href="https://veritassuperaitsolutions.com/three-layer-gate-quota-overage/" style="color:#60a5fa">our analysis</a> for the full discussion of what the TOS and published documents say about this number.</p>';
+  html += '<p style="color:#64748b;font-size:0.8rem;margin-top:12px">The "5x" multiplier is applied to an undefined base. See <a href="https://vsits.co/three-layer-gate-quota-overage/" style="color:#60a5fa">our analysis</a> for the full discussion of what the TOS and published documents say about this number.</p>';
   html += '</div>';
 
   // Section 5: Cost per turn by model

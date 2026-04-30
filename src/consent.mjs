@@ -77,12 +77,21 @@ export function getInstallId() {
 }
 
 /**
+ * Consent scope.
+ *
+ * Bound to the corporate domain. Changing this string invalidates every
+ * stored consent token (token = SHA-256(install_id + timestamp + scope)),
+ * which forces re-consent. We're OK with that because the install base is
+ * still pre-public; a rebrand-driven re-prompt has no real-world impact.
+ */
+const CONSENT_SCOPE = "share_anonymous_usage_data_with_meter.vsits.co";
+
+/**
  * Generate a consent token from install_id + timestamp.
  * Token = SHA-256(install_id + consent_timestamp + consent_scope)
  */
 function generateConsentToken(installId, timestamp) {
-  const scope = "share_anonymous_usage_data_with_meter.veritassuperaitsolutions.com";
-  const input = `${installId}:${timestamp}:${scope}`;
+  const input = `${installId}:${timestamp}:${CONSENT_SCOPE}`;
   return createHash("sha256").update(input).digest("hex").slice(0, 32);
 }
 
@@ -96,7 +105,6 @@ export function getConsentStatus() {
     return { consented: false, reason: "opted_out" };
   }
   if (config.consent_token && config.consent_timestamp && config.install_hash) {
-    // Verify token is valid for this install
     const expected = generateConsentToken(config.install_hash, config.consent_timestamp);
     if (config.consent_token === expected) {
       return {

@@ -51,8 +51,8 @@ export const KNOWN_RATES = {
   },
 };
 
-// Community API server
-export const DEFAULT_SERVER = "https://meter.veritassuperaitsolutions.com";
+// Community API server.
+export const DEFAULT_SERVER = "https://meter.vsits.co";
 
 // Rate-limit header names
 export const HEADERS = {
