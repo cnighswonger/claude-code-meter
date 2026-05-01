@@ -111,9 +111,16 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
 
   // Inclusive UTC calendar-day span: last - first + 1. Counts gap days
   // the subscription was paying for, even if no calls landed.
-  const firstDay = Date.parse(rows[0].ts.slice(0, 10) + "T00:00:00Z");
-  const lastDay = Date.parse(rows[rows.length - 1].ts.slice(0, 10) + "T00:00:00Z");
-  const calendarDays = Math.max(Math.round((lastDay - firstDay) / 86400000) + 1, 1);
+  // Compute via min/max scan (not rows[0] / rows[length-1]) so the result
+  // is robust to non-chronological input — readAllRows() preserves file
+  // order and merged inputs may interleave timestamps.
+  let firstMs = Infinity, lastMs = -Infinity;
+  for (const r of rows) {
+    const ms = Date.parse(r.ts.slice(0, 10) + "T00:00:00Z");
+    if (ms < firstMs) firstMs = ms;
+    if (ms > lastMs) lastMs = ms;
+  }
+  const calendarDays = Math.max(Math.round((lastMs - firstMs) / 86400000) + 1, 1);
 
   const subWindowCost = listPrice * calendarDays;
   const multiplier = cost.total_api_cost / subWindowCost;
