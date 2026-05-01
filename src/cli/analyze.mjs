@@ -80,7 +80,64 @@ function parseListPriceOverrides(spec) {
  * Returns null if list price is null (api / unknown tiers) or insufficient
  * data to compute.
  */
+/**
+ * Compute the amortized cost multiplier M(t) for a set of rows.
+ *
+ * Methodology (the presupposition we publish under):
+ *   M(t) = sum(api_equivalent_cost) / (subscription_daily_price * calendar_days_in_window)
+ *
+ * The denominator is calendar days, not active-session time. A subscription
+ * is paying for every day of the window whether you used it or not, so the
+ * idle days count too. This biases M(t) DOWN for sporadic users (good — it
+ * tells them honestly that they aren't extracting much from the sub) and
+ * gives heavy users no false credit for short bursts.
+ *
+ * Window length is the count of distinct calendar days touched by rows
+ * (not days_span — a single 5-minute session counts as 1 day, not 1/288).
+ * This matches how subscription billing actually works (you're charged the
+ * daily rate any day the sub is active) and avoids the 1h-floor pathology
+ * that inflates short bursts.
+ *
+ * Returns null when the plan has no list price (api / unknown / api keys).
+ */
 function computePlanMultiplier(rows, planTier, listPriceOverrides) {
+  const overridePrice = listPriceOverrides[planTier];
+  const listPrice = overridePrice != null ? overridePrice : PLAN_LIST_PRICE_PER_DAY[planTier];
+  if (listPrice == null || listPrice <= 0) return null;
+  if (rows.length === 0) return null;
+
+  const cost = computeApiCost(rows);
+
+  // Count distinct calendar days (UTC) touched by any row.
+  const dayKeys = new Set();
+  for (const r of rows) dayKeys.add(r.ts.slice(0, 10));
+  const calendarDays = Math.max(dayKeys.size, 1);
+
+  const subWindowCost = listPrice * calendarDays;
+  const multiplier = cost.total_api_cost / subWindowCost;
+  const effectivePerDay = cost.total_api_cost / calendarDays;
+
+  return {
+    plan_tier: planTier,
+    list_price_per_day: +listPrice.toFixed(4),
+    calendar_days: calendarDays,
+    sub_window_cost: +subWindowCost.toFixed(4),
+    effective_cost_per_day: +effectivePerDay.toFixed(4),
+    multiplier_M_t: +multiplier.toFixed(4),
+    n_calls: rows.length,
+    api_equivalent_total: +cost.total_api_cost.toFixed(4),
+    methodology: "amortized_calendar_days",
+  };
+}
+
+/**
+ * Burn-intensity variant — the OLD per-span formula, kept as an opt-in
+ * diagnostic. Tells you "if this session's burn rate were sustained for
+ * 24 hours, what M(t) would that imply?" Useful for ranking sessions by
+ * intensity; misleading when reported as a standalone M(t) because short
+ * sessions extrapolate wildly above sustainable rates.
+ */
+function computeBurnIntensity(rows, planTier, listPriceOverrides) {
   const overridePrice = listPriceOverrides[planTier];
   const listPrice = overridePrice != null ? overridePrice : PLAN_LIST_PRICE_PER_DAY[planTier];
   if (listPrice == null || listPrice <= 0) return null;
@@ -89,31 +146,43 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
   const cost = computeApiCost(rows);
   const tsStart = new Date(rows[0].ts);
   const tsEnd = new Date(rows[rows.length - 1].ts);
-  const daysSpan = Math.max((tsEnd - tsStart) / (24 * 60 * 60 * 1000), 1 / 24);  // floor at 1 hour to avoid divide-by-tiny
+  const daysSpan = Math.max((tsEnd - tsStart) / (24 * 60 * 60 * 1000), 1 / 24);
 
   const effectivePerDay = cost.total_api_cost / daysSpan;
-  const multiplier = effectivePerDay / listPrice;
+  const intensity = effectivePerDay / listPrice;
 
   return {
     plan_tier: planTier,
     list_price_per_day: +listPrice.toFixed(4),
+    days_span: +daysSpan.toFixed(4),
     effective_cost_per_day: +effectivePerDay.toFixed(4),
-    multiplier_M_t: +multiplier.toFixed(4),
-    days_span: +daysSpan.toFixed(2),
+    burn_intensity: +intensity.toFixed(4),
     n_calls: rows.length,
     api_equivalent_total: +cost.total_api_cost.toFixed(4),
+    methodology: "session_span_extrapolated",
+    caveat: "Sub-day sessions extrapolate above sustainable rates; do not interpret as M(t)",
   };
 }
 
 /**
- * Compute M(t) per session and return one row per session.
+ * Per-session "share of subscription value" — how many sub-days of value
+ * each session consumed. No time normalization, no extrapolation:
  *
- * Each session's tier is determined from its first row's timestamp via
- * planTierAt() when transitions are supplied, otherwise the global
- * planTier (or "unknown") is used. Sessions whose tier resolves to a
- * null list price (api / unknown) are dropped.
+ *   sub_days_consumed = session_api_equivalent_cost / daily_sub_price
+ *
+ * A 30-minute session that costs $5 of API-equivalent on a $3.33/day
+ * Max-5x sub consumed 1.5 sub-days of value. A user who racks up 20
+ * sub-days of value across a 30-day billing cycle on a $100/month plan
+ * has effectively gotten ~67% of their subscription's nominal worth back.
+ *
+ * This is a strictly bounded, defensible per-session metric — it answers
+ * a question (was this session's API-equivalent cost worth more or less
+ * than a day of my sub?) without making claims about sustained rates the
+ * data doesn't support.
+ *
+ * Sessions whose tier resolves to a null list price are dropped.
  */
-function computePerSessionMultipliers(rows, planTier, listPriceOverrides, transitions) {
+function computePerSessionShare(rows, planTier, listPriceOverrides, transitions) {
   const bySid = new Map();
   for (const r of rows) {
     if (!bySid.has(r.sid)) bySid.set(r.sid, []);
@@ -122,16 +191,17 @@ function computePerSessionMultipliers(rows, planTier, listPriceOverrides, transi
   const results = [];
   for (const [sid, sRows] of bySid) {
     const tier = transitions.length > 0 ? planTierAt(sRows[0].ts, transitions) : (planTier || "unknown");
-    const mt = computePlanMultiplier(sRows, tier, listPriceOverrides);
-    if (!mt) continue;
+    const overridePrice = listPriceOverrides[tier];
+    const listPrice = overridePrice != null ? overridePrice : PLAN_LIST_PRICE_PER_DAY[tier];
+    if (listPrice == null || listPrice <= 0) continue;
+    const cost = computeApiCost(sRows);
+    const subDaysConsumed = cost.total_api_cost / listPrice;
     results.push({
       sid,
       plan_tier: tier,
       n_calls: sRows.length,
-      days_span: mt.days_span,
-      api_equivalent_total: mt.api_equivalent_total,
-      effective_cost_per_day: mt.effective_cost_per_day,
-      multiplier_M_t: mt.multiplier_M_t,
+      api_equivalent_total: +cost.total_api_cost.toFixed(4),
+      sub_days_consumed: +subDaysConsumed.toFixed(4),
     });
   }
   return results;
@@ -369,7 +439,7 @@ export async function analyzeCommand(args) {
   // session analyses do not. Only hard-fail when the caller is implicitly
   // asking for the regression view (no targeted flag set).
   const skipRegression = sessionEntries.length < 2;
-  if (skipRegression && !args.session && !args["by-plan"] && !args["per-session"]) {
+  if (skipRegression && !args.session && !args["by-plan"] && !args["per-session"] && !args["burn-intensity"]) {
     console.error(`Need at least 2 sessions with 3+ calls each for regression. Found ${sessionEntries.length}.`);
     process.exit(1);
   }
@@ -480,34 +550,57 @@ export async function analyzeCommand(args) {
     }
   }
 
-  // Per-session M(t) distribution, if requested.
-  // --per-session emits one row per session with its own M(t), plus
-  // distribution summaries (n / mean / p25 / median / p75 / min / max).
-  // When combined with --by-plan or --plan-transitions, distributions are
-  // also broken out per tier. This is the apples-to-apples comparison
-  // mode for cross-tool benchmarks where the other tool reports a single
-  // session's number rather than a host-aggregate.
+  // Per-session "share of subscription value" — sub-days consumed per
+  // session. Strictly bounded, no extrapolation. See computePerSessionShare.
   let perSession = null;
   if (args["per-session"]) {
     const transitions = parsePlanTransitions(args["plan-transitions"]);
     const listPriceOverrides = parseListPriceOverrides(args["list-price-override"]);
-    const sessionMts = computePerSessionMultipliers(rows, planTier, listPriceOverrides, transitions);
-    if (sessionMts.length > 0) {
-      const distOverall = summarizeDistribution(sessionMts.map((s) => s.multiplier_M_t));
+    const sessionShares = computePerSessionShare(rows, planTier, listPriceOverrides, transitions);
+    if (sessionShares.length > 0) {
+      const distOverall = summarizeDistribution(sessionShares.map((s) => s.sub_days_consumed));
       const byTier = {};
       const tierBuckets = new Map();
-      for (const s of sessionMts) {
+      for (const s of sessionShares) {
         if (!tierBuckets.has(s.plan_tier)) tierBuckets.set(s.plan_tier, []);
-        tierBuckets.get(s.plan_tier).push(s.multiplier_M_t);
+        tierBuckets.get(s.plan_tier).push(s.sub_days_consumed);
       }
       for (const [tier, vals] of tierBuckets) byTier[tier] = summarizeDistribution(vals);
       perSession = {
+        metric: "sub_days_consumed",
+        definition: "session_api_equivalent_cost / daily_subscription_price",
         distribution_overall: distOverall,
         distribution_by_tier: byTier,
-        sessions: sessionMts.sort((a, b) => b.multiplier_M_t - a.multiplier_M_t),
+        sessions: sessionShares.sort((a, b) => b.sub_days_consumed - a.sub_days_consumed),
       };
     } else {
-      perSession = { note: "No sessions yielded an M(t) — list price null for all detected tiers." };
+      perSession = { note: "No sessions yielded a value — list price null for all detected tiers." };
+    }
+  }
+
+  // Burn intensity (opt-in diagnostic). Old --by-plan formula, kept as
+  // a separate output to inspect session-level burn rates without
+  // confusing them with the amortized M(t) report.
+  let burnIntensity = null;
+  if (args["burn-intensity"]) {
+    const transitions = parsePlanTransitions(args["plan-transitions"]);
+    const listPriceOverrides = parseListPriceOverrides(args["list-price-override"]);
+    const buckets = new Map();
+    for (const row of rows) {
+      let tier = transitions.length > 0 ? planTierAt(row.ts, transitions) : null;
+      if (!tier) tier = planTier || "unknown";
+      if (!buckets.has(tier)) buckets.set(tier, []);
+      buckets.get(tier).push(row);
+    }
+    burnIntensity = {};
+    for (const [tier, tierRows] of buckets) {
+      const bi = computeBurnIntensity(tierRows, tier, listPriceOverrides);
+      burnIntensity[tier] = bi || {
+        plan_tier: tier,
+        list_price_per_day: null,
+        note: "Burn intensity not computed — list price is null for this tier",
+        n_calls: tierRows.length,
+      };
     }
   }
 
@@ -552,6 +645,7 @@ export async function analyzeCommand(args) {
     cost_analysis: computeApiCost(rows),
     ...(byPlan && { by_plan: byPlan }),
     ...(perSession && { per_session: perSession }),
+    ...(burnIntensity && { burn_intensity: burnIntensity }),
     model_spoofing: (() => {
       const mismatches = rows.filter(r => r.model_mismatch);
       if (mismatches.length === 0 && !rows.some(r => r.requested_model)) {
