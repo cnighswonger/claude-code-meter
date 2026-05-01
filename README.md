@@ -100,7 +100,7 @@ claude-meter analyze --burn-intensity --plan max-5x
     M(t)  =  sum(api_equivalent_cost)  /  ( daily_sub_price × calendar_days )
 
 Numerator: API-equivalent cost using Anthropic's published per-token rates, with cache reads priced at Anthropic's cache-read rate (10% of base).
-Denominator: subscription daily list price × calendar days touched by your data. Idle days count — the sub is paying for them.
+Denominator: subscription daily list price × inclusive calendar-day span of the data window (`last_day − first_day + 1` in UTC). Gap days count — the sub is paying for them.
 Aggregation grain: one number per host (per `~/.claude/claude-meter.jsonl`). Multi-agent setups will read higher than a single user's typical session.
 
 Plan list prices are pinned to [claude.com/pricing](https://claude.com/pricing) (verified 2026-05-01). Override with `--list-price-override max-5x=3.50`. Mid-window plan changes: `--plan-transitions 2026-04-15=max-5x,2026-04-22=max-20x`.
