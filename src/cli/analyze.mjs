@@ -92,11 +92,12 @@ function parseListPriceOverrides(spec) {
  * tells them honestly that they aren't extracting much from the sub) and
  * gives heavy users no false credit for short bursts.
  *
- * Window length is the count of distinct calendar days touched by rows
- * (not days_span — a single 5-minute session counts as 1 day, not 1/288).
- * This matches how subscription billing actually works (you're charged the
- * daily rate any day the sub is active) and avoids the 1h-floor pathology
- * that inflates short bursts.
+ * Window length is the inclusive calendar-day span: `last_day - first_day
+ * + 1` in UTC. A single 5-minute session counts as 1 day. A 3-day gap
+ * mid-window still counts as part of the denominator — the subscription
+ * was paying for those days even if you didn't log in. This matches the
+ * methodology we publish under (idle days count) and avoids the
+ * 1h-floor pathology that inflates short bursts.
  *
  * Returns null when the plan has no list price (api / unknown / api keys).
  */
@@ -108,10 +109,11 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
 
   const cost = computeApiCost(rows);
 
-  // Count distinct calendar days (UTC) touched by any row.
-  const dayKeys = new Set();
-  for (const r of rows) dayKeys.add(r.ts.slice(0, 10));
-  const calendarDays = Math.max(dayKeys.size, 1);
+  // Inclusive UTC calendar-day span: last - first + 1. Counts gap days
+  // the subscription was paying for, even if no calls landed.
+  const firstDay = Date.parse(rows[0].ts.slice(0, 10) + "T00:00:00Z");
+  const lastDay = Date.parse(rows[rows.length - 1].ts.slice(0, 10) + "T00:00:00Z");
+  const calendarDays = Math.max(Math.round((lastDay - firstDay) / 86400000) + 1, 1);
 
   const subWindowCost = listPrice * calendarDays;
   const multiplier = cost.total_api_cost / subWindowCost;
