@@ -1,5 +1,13 @@
 # Project: claude-meter
 
+## Session State
+
+**On resume, compaction, or context loss:** Read `SESSION_STATE.md` in this directory immediately. It contains the current working state — infrastructure, pending tasks, recent fixes, and architectural constraints. Update it when significant state changes occur.
+
+**Never post publicly without Chris's approval.** Draft and wait for go-ahead.
+
+## Overview
+
 Community usage metrics collector for Claude Code. Captures anonymized billing data from API responses to enable statistical analysis of Anthropic's pricing model through community data aggregation.
 
 ## Git Workflow
