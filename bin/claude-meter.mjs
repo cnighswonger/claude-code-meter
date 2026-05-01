@@ -66,7 +66,7 @@ Options:
   --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
 
   analyze-only flags:
-  --by-plan           Per-tier amortized M(t) (cost / sub_price * calendar_days)
+  --by-plan           Per-tier amortized M(t) (cost / (sub_price * calendar_days))
   --per-session       Per-session "sub-days consumed" (cost / sub_daily_price)
   --burn-intensity    Per-tier burn rate over session span (diagnostic, not M(t))
   --plan-transitions <spec>     "YYYY-MM-DD=tier,YYYY-MM-DD=tier" for mid-window plan changes

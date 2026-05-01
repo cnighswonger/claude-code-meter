@@ -14,12 +14,22 @@ import { getInstallId, getConsentStatus, requestConsent } from "../consent.mjs";
 function parsePlanTransitions(spec) {
   if (!spec) return [];
   const entries = [];
+  // Strict ISO date format (YYYY-MM-DD) — rejects ambiguous dates like "2026"
+  // or "Jan 1" that Date() would otherwise silently accept.
+  const datePattern = /^\d{4}-\d{2}-\d{2}$/;
   for (const seg of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
-    const [dateStr, tier] = seg.split("=").map((s) => s.trim());
+    const parts = seg.split("=");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid --plan-transitions segment "${seg}" — expected exactly one "=" (got ${parts.length - 1})`);
+    }
+    const [dateStr, tier] = parts.map((s) => s.trim());
     if (!dateStr || !tier) {
       throw new Error(`Invalid --plan-transitions segment "${seg}" — expected "YYYY-MM-DD=tier"`);
     }
-    const date = new Date(dateStr);
+    if (!datePattern.test(dateStr)) {
+      throw new Error(`Invalid date "${dateStr}" in --plan-transitions — expected YYYY-MM-DD`);
+    }
+    const date = new Date(dateStr + "T00:00:00Z");
     if (Number.isNaN(date.getTime())) {
       throw new Error(`Invalid date "${dateStr}" in --plan-transitions`);
     }
@@ -56,11 +66,24 @@ function planTierAt(rowTs, transitions) {
 function parseListPriceOverrides(spec) {
   const overrides = {};
   if (!spec) return overrides;
+  // Strict numeric format — rejects garbage suffixes that parseFloat() would
+  // silently accept (e.g. "3.33junk" → 3.33).
+  const numberPattern = /^-?\d+(\.\d+)?$/;
   for (const seg of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
-    const [tier, price] = seg.split("=").map((s) => s.trim());
-    const p = parseFloat(price);
-    if (!tier || !Number.isFinite(p) || p < 0) {
-      throw new Error(`Invalid --list-price-override segment "${seg}" — expected "tier=N.NN"`);
+    const parts = seg.split("=");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid --list-price-override segment "${seg}" — expected exactly one "=" (got ${parts.length - 1})`);
+    }
+    const [tier, price] = parts.map((s) => s.trim());
+    if (!tier) {
+      throw new Error(`Invalid --list-price-override segment "${seg}" — empty tier`);
+    }
+    if (!numberPattern.test(price)) {
+      throw new Error(`Invalid --list-price-override price "${price}" for tier "${tier}" — expected a plain number like "3.33"`);
+    }
+    const p = Number(price);
+    if (!Number.isFinite(p) || p < 0) {
+      throw new Error(`Invalid --list-price-override segment "${seg}" — expected "tier=N.NN" with N >= 0`);
     }
     overrides[tier] = p;
   }
@@ -153,9 +176,14 @@ function computeBurnIntensity(rows, planTier, listPriceOverrides) {
   if (rows.length === 0) return null;
 
   const cost = computeApiCost(rows);
-  const tsStart = new Date(rows[0].ts);
-  const tsEnd = new Date(rows[rows.length - 1].ts);
-  const daysSpan = Math.max((tsEnd - tsStart) / (24 * 60 * 60 * 1000), 1 / 24);
+  // min/max ts scan — robust to non-chronological input order
+  let firstMs = Infinity, lastMs = -Infinity;
+  for (const r of rows) {
+    const ms = Date.parse(r.ts);
+    if (ms < firstMs) firstMs = ms;
+    if (ms > lastMs) lastMs = ms;
+  }
+  const daysSpan = Math.max((lastMs - firstMs) / (24 * 60 * 60 * 1000), 1 / 24);
 
   const effectivePerDay = cost.total_api_cost / daysSpan;
   const intensity = effectivePerDay / listPrice;
@@ -189,26 +217,35 @@ function computeBurnIntensity(rows, planTier, listPriceOverrides) {
  * than a day of my sub?) without making claims about sustained rates the
  * data doesn't support.
  *
- * Sessions whose tier resolves to a null list price are dropped.
+ * Bucketing key is (sid, tier) — each row's tier is resolved from its own
+ * timestamp via planTierAt() when transitions are supplied. A session that
+ * spans a tier transition (e.g. you upgraded from Max-5x to Max-20x mid-
+ * session) emits one entry per tier-segment, with the tier in the output.
+ *
+ * Buckets whose tier resolves to a null list price are dropped.
  */
 function computePerSessionShare(rows, planTier, listPriceOverrides, transitions) {
-  const bySid = new Map();
+  // Bucket by (sid, tier) — per-row tier resolution so cross-transition
+  // sessions split into one bucket per tier rather than being misattributed
+  // to whichever tier rows[0] happened to land in.
+  const buckets = new Map();
   for (const r of rows) {
-    if (!bySid.has(r.sid)) bySid.set(r.sid, []);
-    bySid.get(r.sid).push(r);
+    const tier = transitions.length > 0 ? planTierAt(r.ts, transitions) : (planTier || "unknown");
+    const key = `${r.sid}\x00${tier}`;
+    if (!buckets.has(key)) buckets.set(key, { sid: r.sid, tier, rows: [] });
+    buckets.get(key).rows.push(r);
   }
   const results = [];
-  for (const [sid, sRows] of bySid) {
-    const tier = transitions.length > 0 ? planTierAt(sRows[0].ts, transitions) : (planTier || "unknown");
+  for (const { sid, tier, rows: bRows } of buckets.values()) {
     const overridePrice = listPriceOverrides[tier];
     const listPrice = overridePrice != null ? overridePrice : PLAN_LIST_PRICE_PER_DAY[tier];
     if (listPrice == null || listPrice <= 0) continue;
-    const cost = computeApiCost(sRows);
+    const cost = computeApiCost(bRows);
     const subDaysConsumed = cost.total_api_cost / listPrice;
     results.push({
       sid,
       plan_tier: tier,
-      n_calls: sRows.length,
+      n_calls: bRows.length,
       api_equivalent_total: +cost.total_api_cost.toFixed(4),
       sub_days_consumed: +subDaysConsumed.toFixed(4),
     });
@@ -417,6 +454,17 @@ function detectPlanTier(rows) {
  * Main analyze command.
  */
 export async function analyzeCommand(args) {
+  // --share is incompatible with --session: single-session payloads aren't
+  // statistically useful for the community dataset, and the server-side
+  // submit gate requires the OLS block which --session-mode skips.
+  if (args.share && args.session) {
+    console.error("--share is not compatible with --session.");
+    console.error("  --session reduces to a single session, which can't produce the OLS regression");
+    console.error("  the community dataset is built on. Run --session locally for inspection,");
+    console.error("  or run --share without --session to contribute aggregate data.");
+    process.exit(1);
+  }
+
   const allRows = readAllRows(args.logFile || LOG_FILE);
   if (allRows.length === 0) {
     console.error("No data in claude-meter.jsonl. Run Claude Code with the meter interceptor first.");
@@ -613,14 +661,21 @@ export async function analyzeCommand(args) {
     }
   }
 
+  // data_range — min/max ts scan, robust to non-chronological input
+  let dataRangeStart = rows[0].ts, dataRangeEnd = rows[0].ts;
+  for (const r of rows) {
+    if (r.ts < dataRangeStart) dataRangeStart = r.ts;
+    if (r.ts > dataRangeEnd) dataRangeEnd = r.ts;
+  }
+
   // Build output
   const summary = {
     v: 1,
     generated_at: new Date().toISOString(),
     install_id: getInstallId(),
     data_range: {
-      start: rows[0].ts,
-      end: rows[rows.length - 1].ts,
+      start: dataRangeStart,
+      end: dataRangeEnd,
     },
     plan_tier: planTier,
     billing_type: rows.some(r => (r.q5h || 0) > 0) ? "subscription" : rows.some(r => r.qstatus) ? "subscription" : "api",
@@ -690,13 +745,22 @@ export async function analyzeCommand(args) {
       return summary;
     }
 
-    // Add consent token to submission
-    summary.consent_token = consentToken;
+    // Build submit payload — strip local-only blocks (by_plan / per_session
+    // / burn_intensity) that the server schema doesn't admit and that
+    // contain host-aggregate cost data the community dataset doesn't need.
+    // The full summary object is still printed below so the user sees their
+    // local analysis in full; only the submitted payload is stripped.
+    const { by_plan, per_session, burn_intensity, ...submitPayload } = summary;
+    submitPayload.consent_token = consentToken;
 
     const jsonStr = JSON.stringify(summary, null, 2);
-    console.log("Data to share:\n");
+    console.log("Local analysis:\n");
     console.log(jsonStr);
-    console.log(`\nSize: ${JSON.stringify(summary).length} bytes | Consent: ${consentToken.slice(0, 8)}...`);
+    if (by_plan || per_session || burn_intensity) {
+      const stripped = [by_plan && "by_plan", per_session && "per_session", burn_intensity && "burn_intensity"].filter(Boolean);
+      console.log(`\nNote: ${stripped.join(", ")} block${stripped.length > 1 ? "s" : ""} stripped from submission (local-only).`);
+    }
+    console.log(`\nSubmit size: ${JSON.stringify(submitPayload).length} bytes | Consent: ${consentToken.slice(0, 8)}...`);
 
     const endpoint = args.endpoint || DEFAULT_SERVER;
     const url = `${endpoint}/api/v1/submit`;
@@ -704,7 +768,7 @@ export async function analyzeCommand(args) {
       const res = await globalThis.fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(summary),
+        body: JSON.stringify(submitPayload),
       });
       const body = await res.json();
       if (res.ok) {

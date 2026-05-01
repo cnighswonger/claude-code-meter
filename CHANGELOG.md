@@ -18,6 +18,8 @@ Every published M(t) number bakes in three hidden choices (numerator, denominato
 
 **Caveat to flag:** the calendar-days denominator gives one number per host (per `~/.claude/claude-meter.jsonl`). Multi-agent setups will read substantially higher than a single user's typical session. The `--per-session` distribution surfaces the underlying spread.
 
+**`analyze --share` interaction:** the new `by_plan` / `per_session` / `burn_intensity` blocks are stripped from the submission payload (they're host-aggregate local data, and the server-side schema doesn't admit them under the existing v:1 contract). The full local printout still includes them; only the bytes sent to the community endpoint are stripped. `--share` + `--session` is rejected with a clear error — single-session payloads don't produce the OLS regression the community dataset is built on.
+
 ## 0.5.0 (2026-04-30)
 
 **Domain rebrand** — `meter.vsits.co` replaces `meter.veritassuperaitsolutions.com`.
@@ -26,6 +28,11 @@ Every published M(t) number bakes in three hidden choices (numerator, denominato
 - `package.json` author email aligned to `dev@vsits.co`.
 - Dashboard and analysis-page links migrated.
 - No data format changes; existing local logs and proxy ingest continue to work without intervention.
+
+**Server `/api/v1/stats` type-aware aggregation** (commit `0479685`):
+
+- The community stats endpoint now correctly distinguishes share rows from analysis rows when computing aggregates, fixing a bug where mixed payload types produced incoherent counts.
+- Includes new server-side tests covering both row types.
 
 ## 0.4.0 (2026-04-25)
 
