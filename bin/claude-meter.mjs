@@ -26,6 +26,10 @@ const { values, positionals } = parseArgs({
     share: { type: "boolean" },
     fit: { type: "boolean" },
     "log-file": { type: "string" },
+    // analyze: by-plan M(t) split
+    "by-plan": { type: "boolean" },
+    "plan-transitions": { type: "string" },
+    "list-price-override": { type: "string" },
     // ingest subcommand
     source: { type: "string" },
     once: { type: "boolean" },
@@ -100,7 +104,14 @@ switch (command) {
   }
   case "analyze": {
     const { analyzeCommand } = await import("../src/cli/analyze.mjs");
-    await analyzeCommand({ ...args, share: values.share, logFile: values["log-file"] });
+    await analyzeCommand({
+      ...args,
+      share: values.share,
+      logFile: values["log-file"],
+      "by-plan": values["by-plan"],
+      "plan-transitions": values["plan-transitions"],
+      "list-price-override": values["list-price-override"],
+    });
     break;
   }
   case "consent": {

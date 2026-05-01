@@ -1,6 +1,109 @@
 import { readAllRows, groupBySession } from "../log/reader.mjs";
-import { LOG_FILE, DEFAULT_SERVER, KNOWN_RATES, RATES_LAST_VERIFIED, RATES_SOURCE_URL } from "../constants.mjs";
+import { LOG_FILE, DEFAULT_SERVER, KNOWN_RATES, RATES_LAST_VERIFIED, RATES_SOURCE_URL, PLAN_LIST_PRICE_PER_DAY } from "../constants.mjs";
 import { getInstallId, getConsentStatus, requestConsent } from "../consent.mjs";
+
+/**
+ * Parse --plan-transitions value of the form
+ *   "2026-01-01=max-5x,2026-04-15=max-20x"
+ * into a sorted array of {date: Date, tier: string} entries.
+ *
+ * The interpretation: from each date forward (inclusive), the plan tier is
+ * the matching value, until the next entry takes effect. Rows before the
+ * earliest entry have no plan tier assigned.
+ */
+function parsePlanTransitions(spec) {
+  if (!spec) return [];
+  const entries = [];
+  for (const seg of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [dateStr, tier] = seg.split("=").map((s) => s.trim());
+    if (!dateStr || !tier) {
+      throw new Error(`Invalid --plan-transitions segment "${seg}" — expected "YYYY-MM-DD=tier"`);
+    }
+    const date = new Date(dateStr);
+    if (Number.isNaN(date.getTime())) {
+      throw new Error(`Invalid date "${dateStr}" in --plan-transitions`);
+    }
+    if (!(tier in PLAN_LIST_PRICE_PER_DAY)) {
+      throw new Error(`Unknown plan tier "${tier}" in --plan-transitions. Known: ${Object.keys(PLAN_LIST_PRICE_PER_DAY).join(", ")}`);
+    }
+    entries.push({ date, tier });
+  }
+  entries.sort((a, b) => a.date - b.date);
+  return entries;
+}
+
+/**
+ * Given a row's timestamp and the parsed transition list, return the plan
+ * tier in effect at that time (or null if the row predates the earliest
+ * transition).
+ */
+function planTierAt(rowTs, transitions) {
+  if (transitions.length === 0) return null;
+  const t = new Date(rowTs);
+  let current = null;
+  for (const entry of transitions) {
+    if (t >= entry.date) current = entry.tier;
+    else break;
+  }
+  return current;
+}
+
+/**
+ * Parse --list-price-override value of the form
+ *   "max-5x=0.83,max-20x=3.33"
+ * Returns a {tier: usd_per_day} map merged on top of the defaults.
+ */
+function parseListPriceOverrides(spec) {
+  const overrides = {};
+  if (!spec) return overrides;
+  for (const seg of spec.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [tier, price] = seg.split("=").map((s) => s.trim());
+    const p = parseFloat(price);
+    if (!tier || !Number.isFinite(p) || p < 0) {
+      throw new Error(`Invalid --list-price-override segment "${seg}" — expected "tier=N.NN"`);
+    }
+    overrides[tier] = p;
+  }
+  return overrides;
+}
+
+/**
+ * Compute M(t) = effective_cost_per_day / list_price_per_day, plus the
+ * supporting numbers, for a given subset of rows at a given plan tier.
+ *
+ * `effective_cost_per_day` derives from the API-equivalent cost (what these
+ * tokens would cost at retail Anthropic pricing) divided by the elapsed
+ * days the rows span. M(t) > 1 means subscription value exceeds list price
+ * at this usage level; M(t) < 1 means the user is paying for capacity they
+ * don't consume. Both are interesting; both are public-info-derivable.
+ *
+ * Returns null if list price is null (api / unknown tiers) or insufficient
+ * data to compute.
+ */
+function computePlanMultiplier(rows, planTier, listPriceOverrides) {
+  const overridePrice = listPriceOverrides[planTier];
+  const listPrice = overridePrice != null ? overridePrice : PLAN_LIST_PRICE_PER_DAY[planTier];
+  if (listPrice == null || listPrice <= 0) return null;
+  if (rows.length === 0) return null;
+
+  const cost = computeApiCost(rows);
+  const tsStart = new Date(rows[0].ts);
+  const tsEnd = new Date(rows[rows.length - 1].ts);
+  const daysSpan = Math.max((tsEnd - tsStart) / (24 * 60 * 60 * 1000), 1 / 24);  // floor at 1 hour to avoid divide-by-tiny
+
+  const effectivePerDay = cost.total_api_cost / daysSpan;
+  const multiplier = effectivePerDay / listPrice;
+
+  return {
+    plan_tier: planTier,
+    list_price_per_day: +listPrice.toFixed(4),
+    effective_cost_per_day: +effectivePerDay.toFixed(4),
+    multiplier_M_t: +multiplier.toFixed(4),
+    days_span: +daysSpan.toFixed(2),
+    n_calls: rows.length,
+    api_equivalent_total: +cost.total_api_cost.toFixed(4),
+  };
+}
 
 /**
  * Compute API-equivalent cost for a set of rows using published rates.
@@ -272,6 +375,36 @@ export async function analyzeCommand(args) {
   const nRejected = rows.filter((r) => r.qstatus === "rejected").length;
   const nDrainEvents = rows.filter((r) => (r.q5h || 0) >= 1.0).length;
 
+  // Per-plan M(t) split, if requested.
+  // --by-plan enables the section
+  // --plan-transitions "YYYY-MM-DD=tier,..." attributes each row to a tier
+  //   based on its timestamp; rows without a transition match are bucketed
+  //   under the global --plan value (or "unknown")
+  // --list-price-override "tier=N.NN,..." overrides PLAN_LIST_PRICE_PER_DAY
+  //   defaults for one or more tiers (use when actual pricing differs)
+  let byPlan = null;
+  if (args["by-plan"]) {
+    const transitions = parsePlanTransitions(args["plan-transitions"]);
+    const listPriceOverrides = parseListPriceOverrides(args["list-price-override"]);
+    const buckets = new Map();
+    for (const row of rows) {
+      let tier = transitions.length > 0 ? planTierAt(row.ts, transitions) : null;
+      if (!tier) tier = planTier || "unknown";
+      if (!buckets.has(tier)) buckets.set(tier, []);
+      buckets.get(tier).push(row);
+    }
+    byPlan = {};
+    for (const [tier, tierRows] of buckets) {
+      const mt = computePlanMultiplier(tierRows, tier, listPriceOverrides);
+      byPlan[tier] = mt || {
+        plan_tier: tier,
+        list_price_per_day: null,
+        note: "M(t) not computed — list price is null for this tier (api / unknown / unconfigured)",
+        n_calls: tierRows.length,
+      };
+    }
+  }
+
   // Build output
   const summary = {
     v: 1,
@@ -309,6 +442,7 @@ export async function analyzeCommand(args) {
       ])
     ),
     cost_analysis: computeApiCost(rows),
+    ...(byPlan && { by_plan: byPlan }),
     model_spoofing: (() => {
       const mismatches = rows.filter(r => r.model_mismatch);
       if (mismatches.length === 0 && !rows.some(r => r.requested_model)) {
