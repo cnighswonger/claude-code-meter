@@ -28,6 +28,7 @@ const { values, positionals } = parseArgs({
     "log-file": { type: "string" },
     // analyze: by-plan M(t) split
     "by-plan": { type: "boolean" },
+    "per-session": { type: "boolean" },
     "plan-transitions": { type: "string" },
     "list-price-override": { type: "string" },
     // ingest subcommand
@@ -109,6 +110,7 @@ switch (command) {
       share: values.share,
       logFile: values["log-file"],
       "by-plan": values["by-plan"],
+      "per-session": values["per-session"],
       "plan-transitions": values["plan-transitions"],
       "list-price-override": values["list-price-override"],
     });

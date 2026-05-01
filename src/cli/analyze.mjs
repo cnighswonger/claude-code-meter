@@ -106,6 +106,55 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
 }
 
 /**
+ * Compute M(t) per session and return one row per session.
+ *
+ * Each session's tier is determined from its first row's timestamp via
+ * planTierAt() when transitions are supplied, otherwise the global
+ * planTier (or "unknown") is used. Sessions whose tier resolves to a
+ * null list price (api / unknown) are dropped.
+ */
+function computePerSessionMultipliers(rows, planTier, listPriceOverrides, transitions) {
+  const bySid = new Map();
+  for (const r of rows) {
+    if (!bySid.has(r.sid)) bySid.set(r.sid, []);
+    bySid.get(r.sid).push(r);
+  }
+  const results = [];
+  for (const [sid, sRows] of bySid) {
+    const tier = transitions.length > 0 ? planTierAt(sRows[0].ts, transitions) : (planTier || "unknown");
+    const mt = computePlanMultiplier(sRows, tier, listPriceOverrides);
+    if (!mt) continue;
+    results.push({
+      sid,
+      plan_tier: tier,
+      n_calls: sRows.length,
+      days_span: mt.days_span,
+      api_equivalent_total: mt.api_equivalent_total,
+      effective_cost_per_day: mt.effective_cost_per_day,
+      multiplier_M_t: mt.multiplier_M_t,
+    });
+  }
+  return results;
+}
+
+function summarizeDistribution(values) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const sum = sorted.reduce((a, b) => a + b, 0);
+  const mean = sum / sorted.length;
+  const pct = (p) => sorted[Math.floor(p * (sorted.length - 1))];
+  return {
+    n: sorted.length,
+    mean: +mean.toFixed(4),
+    p25: +pct(0.25).toFixed(4),
+    median: +pct(0.5).toFixed(4),
+    p75: +pct(0.75).toFixed(4),
+    min: +sorted[0].toFixed(4),
+    max: +sorted[sorted.length - 1].toFixed(4),
+  };
+}
+
+/**
  * Compute API-equivalent cost for a set of rows using published rates.
  * Returns { total, breakdown_by_model, cache_savings, no_cache_cost }
  */
@@ -289,16 +338,38 @@ function detectPlanTier(rows) {
  * Main analyze command.
  */
 export async function analyzeCommand(args) {
-  const rows = readAllRows(args.logFile || LOG_FILE);
-  if (rows.length === 0) {
+  const allRows = readAllRows(args.logFile || LOG_FILE);
+  if (allRows.length === 0) {
     console.error("No data in claude-meter.jsonl. Run Claude Code with the meter interceptor first.");
     process.exit(1);
+  }
+
+  // --session <sid> filters to a single session before any analysis.
+  // Accepts a full sid or a unique prefix (claude-meter sids are 8-char
+  // hex hashes; shorter prefixes are convenient when typing).
+  let rows = allRows;
+  if (args.session) {
+    const matches = allRows.filter((r) => r.sid && r.sid.startsWith(args.session));
+    const distinctSids = new Set(matches.map((r) => r.sid));
+    if (matches.length === 0) {
+      console.error(`No rows matching session prefix '${args.session}'.`);
+      process.exit(1);
+    }
+    if (distinctSids.size > 1) {
+      console.error(`Session prefix '${args.session}' is ambiguous — matches ${distinctSids.size} sessions: ${[...distinctSids].join(", ")}`);
+      process.exit(1);
+    }
+    rows = matches;
   }
 
   const sessions = groupBySession(rows);
   const sessionEntries = [...sessions.entries()].filter(([, rows]) => rows.length >= 3);
 
-  if (sessionEntries.length < 2) {
+  // Regression requires multiple sessions; per-plan / per-session / single-
+  // session analyses do not. Only hard-fail when the caller is implicitly
+  // asking for the regression view (no targeted flag set).
+  const skipRegression = sessionEntries.length < 2;
+  if (skipRegression && !args.session && !args["by-plan"] && !args["per-session"]) {
     console.error(`Need at least 2 sessions with 3+ calls each for regression. Found ${sessionEntries.length}.`);
     process.exit(1);
   }
@@ -328,16 +399,20 @@ export async function analyzeCommand(args) {
 
   // Feature names for regression
   const featureNames = ["avg_output", "avg_input", "avg_cache_creation", "avg_cache_read"];
-  const features = sessionData.map((s) => [s.avg_output, s.avg_input, s.avg_cache_creation, s.avg_cache_read]);
-  const y = sessionData.map((s) => s.q5h_per_turn);
 
-  // Run OLS
-  const ols = olsRegression(features, y, featureNames);
-
-  // Pearson correlations
-  const correlations = {};
-  for (const name of featureNames) {
-    correlations[name] = +pearson(sessionData.map((s) => s[name]), y).toFixed(4);
+  // OLS + Pearson are skipped when there aren't enough sessions (e.g.
+  // --session filtered down to a single session). Targeted analyses
+  // (--by-plan / --per-session) still produce useful output without them.
+  let ols = null;
+  let correlations = null;
+  if (!skipRegression) {
+    const features = sessionData.map((s) => [s.avg_output, s.avg_input, s.avg_cache_creation, s.avg_cache_read]);
+    const y = sessionData.map((s) => s.q5h_per_turn);
+    ols = olsRegression(features, y, featureNames);
+    correlations = {};
+    for (const name of featureNames) {
+      correlations[name] = +pearson(sessionData.map((s) => s[name]), y).toFixed(4);
+    }
   }
 
   // Cumulative exponents per session
@@ -405,6 +480,37 @@ export async function analyzeCommand(args) {
     }
   }
 
+  // Per-session M(t) distribution, if requested.
+  // --per-session emits one row per session with its own M(t), plus
+  // distribution summaries (n / mean / p25 / median / p75 / min / max).
+  // When combined with --by-plan or --plan-transitions, distributions are
+  // also broken out per tier. This is the apples-to-apples comparison
+  // mode for cross-tool benchmarks where the other tool reports a single
+  // session's number rather than a host-aggregate.
+  let perSession = null;
+  if (args["per-session"]) {
+    const transitions = parsePlanTransitions(args["plan-transitions"]);
+    const listPriceOverrides = parseListPriceOverrides(args["list-price-override"]);
+    const sessionMts = computePerSessionMultipliers(rows, planTier, listPriceOverrides, transitions);
+    if (sessionMts.length > 0) {
+      const distOverall = summarizeDistribution(sessionMts.map((s) => s.multiplier_M_t));
+      const byTier = {};
+      const tierBuckets = new Map();
+      for (const s of sessionMts) {
+        if (!tierBuckets.has(s.plan_tier)) tierBuckets.set(s.plan_tier, []);
+        tierBuckets.get(s.plan_tier).push(s.multiplier_M_t);
+      }
+      for (const [tier, vals] of tierBuckets) byTier[tier] = summarizeDistribution(vals);
+      perSession = {
+        distribution_overall: distOverall,
+        distribution_by_tier: byTier,
+        sessions: sessionMts.sort((a, b) => b.multiplier_M_t - a.multiplier_M_t),
+      };
+    } else {
+      perSession = { note: "No sessions yielded an M(t) — list price null for all detected tiers." };
+    }
+  }
+
   // Build output
   const summary = {
     v: 1,
@@ -421,13 +527,15 @@ export async function analyzeCommand(args) {
     n_calls: rows.length,
     n_drain_events: nDrainEvents,
     n_rejected: nRejected,
-    ols: {
-      r_squared: +ols.r_squared.toFixed(4),
-      coefficients: Object.fromEntries(
-        Object.entries(ols.coefficients).map(([k, v]) => [k, +v.toExponential(4)])
-      ),
-    },
-    correlations,
+    ...(ols && {
+      ols: {
+        r_squared: +ols.r_squared.toFixed(4),
+        coefficients: Object.fromEntries(
+          Object.entries(ols.coefficients).map(([k, v]) => [k, +v.toExponential(4)])
+        ),
+      },
+    }),
+    ...(correlations && { correlations }),
     exponents: exponentStats,
     ...(peakSessions.length > 0 && offpeakSessions.length > 0 && {
       peak_vs_offpeak: {
@@ -443,6 +551,7 @@ export async function analyzeCommand(args) {
     ),
     cost_analysis: computeApiCost(rows),
     ...(byPlan && { by_plan: byPlan }),
+    ...(perSession && { per_session: perSession }),
     model_spoofing: (() => {
       const mismatches = rows.filter(r => r.model_mismatch);
       if (mismatches.length === 0 && !rows.some(r => r.requested_model)) {
