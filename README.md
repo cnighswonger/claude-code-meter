@@ -1,10 +1,10 @@
 # claude-code-meter
 
-[![npm](https://img.shields.io/npm/v/claude-code-meter?color=blue)](https://www.npmjs.com/package/claude-code-meter) [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT) [![Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://meter.veritassuperaitsolutions.com)
+[![npm](https://img.shields.io/npm/v/claude-code-meter?color=blue)](https://www.npmjs.com/package/claude-code-meter) [![Node.js](https://img.shields.io/badge/Node.js-18%2B-green)](https://nodejs.org/) [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](https://opensource.org/licenses/MIT) [![Dashboard](https://img.shields.io/badge/Dashboard-Live-brightgreen)](https://meter.vsits.co)
 
 Community usage metrics collector for Claude Code. Captures anonymized billing data from API responses and provides session-level cost modeling through statistical analysis.
 
-**Live dashboard:** [meter.veritassuperaitsolutions.com](https://meter.veritassuperaitsolutions.com)
+**Live dashboard:** [meter.vsits.co](https://meter.vsits.co)
 
 ## What it does
 
@@ -88,7 +88,7 @@ claude-meter analyze --share
 # Shows the exact JSON before sending. You confirm before anything is transmitted.
 ```
 
-Data goes to [meter.veritassuperaitsolutions.com](https://meter.veritassuperaitsolutions.com) and is visible on the community dashboard.
+Data goes to [meter.vsits.co](https://meter.vsits.co) and is visible on the community dashboard.
 
 ### View your metrics
 
@@ -156,7 +156,7 @@ The interceptor uses `response.clone()`, not `TransformStream`. This is critical
 
 ## Community server
 
-The live server at [meter.veritassuperaitsolutions.com](https://meter.veritassuperaitsolutions.com) accepts community submissions and visualizes aggregate data.
+The live server at [meter.vsits.co](https://meter.vsits.co) accepts community submissions and visualizes aggregate data.
 
 API endpoints:
 - `POST /api/v1/submit` — submit analysis summary (anonymous or API key)
@@ -179,7 +179,7 @@ Rate limits: 10 submissions/day anonymous, 100/day with API key.
 
 - [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix) — Prompt cache fix interceptor (108+ stars)
 - [claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) — Token forensics dashboard by @fgrosswig
-- [Blog series](https://veritassuperaitsolutions.com/three-layer-gate-quota-overage/) — Technical analysis of Claude Code's cache mechanics
+- [Blog series](https://vsits.co/three-layer-gate-quota-overage/) — Technical analysis of Claude Code's cache mechanics
 
 ## Support
 
