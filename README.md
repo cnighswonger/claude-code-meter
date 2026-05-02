@@ -79,6 +79,34 @@ claude-meter analyze
 
 This is the core feature — it runs statistical analysis on your accumulated usage data and produces a shareable JSON summary showing how your quota drain maps to token types.
 
+### Cost-multiplier reporting (M(t))
+
+```bash
+# Amortized M(t) — what your subscription buys vs API list price
+claude-meter analyze --by-plan --plan max-5x
+
+# Per-session "sub-days consumed" — strictly bounded per-session metric
+claude-meter analyze --per-session --plan max-5x
+
+# Filter to a single session
+claude-meter analyze --session <sid> --by-plan --plan max-5x
+
+# Span-extrapolated burn intensity (diagnostic — NOT M(t))
+claude-meter analyze --burn-intensity --plan max-5x
+```
+
+**What M(t) means here.** We report
+
+    M(t)  =  sum(api_equivalent_cost)  /  ( daily_sub_price × calendar_days )
+
+Numerator: API-equivalent cost using Anthropic's published per-token rates, with cache reads priced at Anthropic's cache-read rate (10% of base).
+Denominator: subscription daily list price × inclusive calendar-day span of the data window (`last_day − first_day + 1` in UTC). Gap days count — the sub is paying for them.
+Aggregation grain: one number per host (per `~/.claude/claude-meter.jsonl`). Multi-agent setups will read higher than a single user's typical session.
+
+Plan list prices are pinned to [claude.com/pricing](https://claude.com/pricing) (verified 2026-05-01). Override with `--list-price-override max-5x=3.50`. Mid-window plan changes: `--plan-transitions 2026-04-15=max-5x,2026-04-22=max-20x`.
+
+**Why a separate `--burn-intensity` flag.** The old "intensity" formula divides cost by session span (with a 1h floor for short sessions). For a 5-minute burst it extrapolates burn rate as if sustained for 24 hours, which makes the number look 10–100× higher than any meaningful sustained M(t). It's useful for ranking sessions by intensity, but not as a published M(t) — hence the separate flag and the `caveat` field in its output.
+
 ### Share with the community (opt-in)
 
 ```bash

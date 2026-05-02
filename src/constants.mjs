@@ -54,6 +54,25 @@ export const KNOWN_RATES = {
 // Community API server.
 export const DEFAULT_SERVER = "https://meter.vsits.co";
 
+// Subscription plan list prices ($/day, derived from monthly rate / 30).
+//
+// Source: https://claude.com/pricing
+// Last verified: 2026-05-01
+//
+// Anthropic's pricing changes without notice; if the pricing page differs
+// from these constants, the pricing page wins. Override at the CLI with
+// --list-price-override <plan>=<usd_per_day>.
+export const PLAN_LIST_PRICE_PER_DAY = {
+  "pro": 0.667,         // $20/mo
+  "max-5x": 3.333,      // $100/mo (5x Pro multiplier)
+  "max-20x": 6.667,     // $200/mo (20x Pro multiplier)
+  // Some installations may use the older single-tier "max" name; treat as max-5x.
+  "max": 3.333,
+  // API users have no flat-rate; M(t) is undefined for them.
+  "api": null,
+  "unknown": null,
+};
+
 // Rate-limit header names
 export const HEADERS = {
   Q5H: "anthropic-ratelimit-unified-5h-utilization",

@@ -26,6 +26,12 @@ const { values, positionals } = parseArgs({
     share: { type: "boolean" },
     fit: { type: "boolean" },
     "log-file": { type: "string" },
+    // analyze: by-plan M(t) split
+    "by-plan": { type: "boolean" },
+    "per-session": { type: "boolean" },
+    "burn-intensity": { type: "boolean" },
+    "plan-transitions": { type: "string" },
+    "list-price-override": { type: "string" },
     // ingest subcommand
     source: { type: "string" },
     once: { type: "boolean" },
@@ -51,17 +57,27 @@ Commands:
   ingest              Ingest validated rows from cache-fix proxy's usage.jsonl
 
 Options:
-  -s, --session <id>  Target a specific session
+  -s, --session <id>  Filter analysis to one session (full sid or unique prefix)
   -d, --days <n>      Number of days for history (default: 7)
-  -p, --plan <tier>   Plan tier: pro, max_5, max_20, team, enterprise
+  -p, --plan <tier>   Plan tier: pro, max-5x, max-20x, api, unknown
   -e, --endpoint <url> Community API endpoint
   -c, --community     Use community dataset for rates
   --share             Include share preview with analyze output
   --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
+
+  analyze-only flags:
+  --by-plan           Per-tier amortized M(t) (cost / (sub_price * calendar_days))
+  --per-session       Per-session "sub-days consumed" (cost / sub_daily_price)
+  --burn-intensity    Per-tier burn rate over session span (diagnostic, not M(t))
+  --plan-transitions <spec>     "YYYY-MM-DD=tier,YYYY-MM-DD=tier" for mid-window plan changes
+  --list-price-override <spec>  "tier=N.NN,..." override list-price defaults
+
+  ingest flags:
   --source <path>     ingest: path to proxy usage.jsonl (default: ~/.claude/usage.jsonl)
   --once              ingest: read to current EOF and exit (default behavior)
   --watch             ingest: tick periodically until Ctrl-C
   --reset-offset      ingest: delete offset file before reading (re-process from start)
+
   -y, --yes           Skip confirmation prompts
   -h, --help          Show this help
 `);
@@ -100,7 +116,16 @@ switch (command) {
   }
   case "analyze": {
     const { analyzeCommand } = await import("../src/cli/analyze.mjs");
-    await analyzeCommand({ ...args, share: values.share, logFile: values["log-file"] });
+    await analyzeCommand({
+      ...args,
+      share: values.share,
+      logFile: values["log-file"],
+      "by-plan": values["by-plan"],
+      "per-session": values["per-session"],
+      "burn-intensity": values["burn-intensity"],
+      "plan-transitions": values["plan-transitions"],
+      "list-price-override": values["list-price-override"],
+    });
     break;
   }
   case "consent": {
