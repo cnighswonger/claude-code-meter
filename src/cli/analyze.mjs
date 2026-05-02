@@ -33,6 +33,11 @@ function parsePlanTransitions(spec) {
     if (Number.isNaN(date.getTime())) {
       throw new Error(`Invalid date "${dateStr}" in --plan-transitions`);
     }
+    // JS Date silently normalizes impossible dates (e.g. 2026-02-31 → 2026-03-03).
+    // Roundtrip-check the components so users see typos instead of silent shift.
+    if (date.toISOString().slice(0, 10) !== dateStr) {
+      throw new Error(`Invalid date "${dateStr}" in --plan-transitions — not a real calendar date (would normalize to ${date.toISOString().slice(0, 10)})`);
+    }
     if (!(tier in PLAN_LIST_PRICE_PER_DAY)) {
       throw new Error(`Unknown plan tier "${tier}" in --plan-transitions. Known: ${Object.keys(PLAN_LIST_PRICE_PER_DAY).join(", ")}`);
     }
