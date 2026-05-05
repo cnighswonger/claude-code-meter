@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.6.0 (unreleased)
+## 0.6.1 (2026-05-05)
+
+**Documentation: M_real attribution to `fgrosswig/claude-usage-dashboard`** (closes [#10](https://github.com/cnighswonger/claude-code-meter/issues/10)).
+
+The subscription cost-multiplier concept that meter ships as `M(t)` was first published in [fgrosswig/claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) as `M_real` / `computeSessionMt` 18 days earlier (April 13 2026). README's Related section now reflects that lineage; the v0.6.0 CHANGELOG entry below has been amended retroactively at @fgrosswig's request to carry the same note.
+
+No code changes in this release. Functionally identical to v0.6.0.
+
+## 0.6.0 (2026-05-02)
 
 **Cost-multiplier reporting (M(t))** with an explicit, defensible methodology.
 
@@ -19,6 +27,8 @@ Every published M(t) number bakes in three hidden choices (numerator, denominato
 **Caveat to flag:** the calendar-days denominator gives one number per host (per `~/.claude/claude-meter.jsonl`). Multi-agent setups will read substantially higher than a single user's typical session. The `--per-session` distribution surfaces the underlying spread.
 
 **`analyze --share` interaction:** the new `by_plan` / `per_session` / `burn_intensity` blocks are stripped from the submission payload (they're host-aggregate local data, and the server-side schema doesn't admit them under the existing v:1 contract). The full local printout still includes them; only the bytes sent to the community endpoint are stripped. `--share` + `--session` is rejected with a clear error — single-session payloads don't produce the OLS regression the community dataset is built on.
+
+**Note** *(added retroactively in v0.6.1, 2026-05-05)*: The subscription value multiplier concept was first published in [fgrosswig/claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) (`M_real`, April 13 2026). meter's `M(t)` uses a calendar-day formula; claude-usage-dashboard uses a session-based quadratic model.
 
 ## 0.5.0 (2026-04-30)
 
