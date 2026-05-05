@@ -30,25 +30,9 @@ async function fetch(path, opts = {}) {
   return { status: res.status, text, json, headers: res.headers };
 }
 
-before(async () => {
-  dataDir = mkdtempSync(join(tmpdir(), "meter-test-"));
-  process.env.DATA_DIR = dataDir;
-  process.env.PORT = "0"; // Let OS pick a port
-
-  // Dynamic import so env vars are set first
-  const mod = await import("../server/index.mjs");
-
-  // The server module starts listening on import. We need to find its port.
-  // Wait briefly for it to bind.
-  await new Promise((r) => setTimeout(r, 500));
-
-  // Read the port from the server — we'll need to refactor server to export it.
-  // For now, use a known port approach.
-});
-
-// Since the server auto-starts on import, we'll use a different approach:
-// start the server externally and test against it.
-// For CI, this is cleaner anyway.
+// The server in server/index.mjs calls server.listen(...) at module top level,
+// so importing it from inside the test process hangs the test runner. Instead,
+// we spawn the server as a separate process and test against it over HTTP.
 
 import { spawn } from "node:child_process";
 

@@ -6,7 +6,13 @@
 
 The subscription cost-multiplier concept that meter ships as `M(t)` was first published in [fgrosswig/claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) as `M_real` / `computeSessionMt` 18 days earlier (April 13 2026). README's Related section now reflects that lineage; the v0.6.0 CHANGELOG entry below has been amended retroactively at @fgrosswig's request to carry the same note.
 
-No code changes in this release. Functionally identical to v0.6.0.
+**Test runner cleanup** (no behavior change to the shipped package).
+
+- `test/server-security.test.mjs` had a dead `before` hook from an abandoned in-process server-import approach. Because `server/index.mjs` calls `server.listen()` at module top level, importing it from inside the test runner kept the event loop alive and hung the entire test file before the working subprocess-based `before` could run. Dead hook removed; the subprocess approach is now the only setup path.
+- `package.json` `test` script changed from `node --test test/` to `node --test test/*.test.mjs` for Node 24 compatibility (Node 24 interprets bare `test/` as a module specifier rather than a directory).
+- Result: `npm test` now runs cleanly with 43/43 passing on Node 24.
+
+No runtime/library code changes. v0.6.1 is functionally identical to v0.6.0 for end users; only test infrastructure and docs differ.
 
 ## 0.6.0 (2026-05-02)
 
