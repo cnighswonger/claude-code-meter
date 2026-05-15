@@ -178,7 +178,9 @@ async function loadDashboard() {
     return;
   }
 
-  renderStatsRow(stats, analyses.length);
+  // "Analysis Reports" card counts submissions received (raw), not unique
+  // installs. Chart math and call/session totals use the deduped `analyses`.
+  renderStatsRow(stats, rawAnalyses.length);
   renderCharts(analyses);
 }
 
