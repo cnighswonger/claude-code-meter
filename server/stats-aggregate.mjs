@@ -21,18 +21,30 @@
  * returned `total_turns: 0` and `models: { undefined: N }` for analysis
  * submissions. This function detects the shape per row and aggregates
  * correctly across mixed-type datasets.
+ *
+ * Analysis rows are deduped by `install_id` before aggregation — see
+ * `dedupAnalysisByInstallId`. Share rows are intentionally not deduped.
+ * `total_submissions` and `submissions_by_type` continue to reflect the
+ * raw row counts; only the call / session / model totals change.
  */
 export function computeStatsAggregate(rows) {
+  // Count raw submissions by type before dedup so the reported breakdown
+  // matches the row count downstream consumers see at /api/v1/dataset.
+  let shareSubmissions = 0;
+  let analysisSubmissions = 0;
+  for (const r of rows) {
+    if (r && r.type === "analysis") analysisSubmissions++;
+    else if (r) shareSubmissions++;
+  }
+
+  const deduped = dedupAnalysisByInstallId(rows);
   const models = new Map();
   let totalCalls = 0;
   let totalSessions = 0;
-  let shareSubmissions = 0;
-  let analysisSubmissions = 0;
   const dates = [];
 
-  for (const r of rows) {
+  for (const r of deduped) {
     if (r && r.type === "analysis") {
-      analysisSubmissions++;
       totalCalls += Number.isFinite(r.n_calls) ? r.n_calls : 0;
       totalSessions += Number.isFinite(r.n_sessions) ? r.n_sessions : 0;
       if (r.model_splits && typeof r.model_splits === "object") {
@@ -47,7 +59,6 @@ export function computeStatsAggregate(rows) {
       else if (r.data_range && r.data_range.end) dates.push(r.data_range.end);
     } else if (r) {
       // Default: treat as SharePayloadSchema (legacy rows have no `type`).
-      shareSubmissions++;
       const turns = Number.isFinite(r.turn_count) ? r.turn_count : 0;
       totalCalls += turns;
       totalSessions += 1; // share submission = one session
@@ -70,4 +81,44 @@ export function computeStatsAggregate(rows) {
     earliest: dates.length > 0 ? dates[0] : null,
     latest: dates.length > 0 ? dates[dates.length - 1] : null,
   };
+}
+
+/**
+ * Keep only the newest analysis snapshot per `install_id`. Share rows,
+ * analysis rows without an `install_id`, and null/undefined rows pass
+ * through untouched.
+ *
+ * Each `type: "analysis"` submission is a CUMULATIVE snapshot covering the
+ * install's full data range, so two snapshots from the same install have
+ * overlapping windows. Summing them inflates totals — the latest snapshot
+ * supersedes earlier ones.
+ *
+ * Newest is selected by `generated_at`, falling back to `data_range.end`
+ * if `generated_at` is missing. ISO-8601 timestamps compare correctly as
+ * strings, so no Date parsing is needed.
+ *
+ * Share / SharePayloadSchema rows are NOT deduped — they are per-session
+ * aggregates with non-overlapping windows, so summing them is correct.
+ */
+export function dedupAnalysisByInstallId(rows) {
+  const latestByInstall = new Map();
+  const passthrough = [];
+
+  for (const r of rows) {
+    if (!r || r.type !== "analysis" || !r.install_id) {
+      passthrough.push(r);
+      continue;
+    }
+    const key = r.install_id;
+    const ts = r.generated_at || (r.data_range && r.data_range.end) || "";
+    const existing = latestByInstall.get(key);
+    const existingTs = existing
+      ? (existing.generated_at || (existing.data_range && existing.data_range.end) || "")
+      : "";
+    if (!existing || ts > existingTs) {
+      latestByInstall.set(key, r);
+    }
+  }
+
+  return [...passthrough, ...latestByInstall.values()];
 }

@@ -161,7 +161,16 @@ async function loadDashboard() {
   const stats = await statsRes.json();
   const dataset = await dataRes.json();
 
-  const analyses = dataset.data.filter(d => d.type === 'analysis');
+  // Aggregate across submissions (deduped by install_id). Mirrors the
+  // pattern in analysis.html — /api/v1/dataset intentionally remains a
+  // raw row feed, so each client that aggregates must dedup itself.
+  const rawAnalyses = dataset.data.filter(d => d.type === 'analysis');
+  const latest = {};
+  for (const a of rawAnalyses) {
+    const id = a.install_id || 'unknown';
+    latest[id] = a; // last one wins per install
+  }
+  const analyses = Object.values(latest);
 
   if (analyses.length === 0) {
     document.getElementById('empty-state').style.display = 'block';
@@ -174,14 +183,18 @@ async function loadDashboard() {
 }
 
 function renderStatsRow(stats, analysisCount) {
-  const totalCalls = analyses => analyses.reduce((s, a) => s + (a.n_calls || 0), 0);
-  const totalSessions = analyses => analyses.reduce((s, a) => s + (a.n_sessions || 0), 0);
-
   const row = document.getElementById('stats-row');
 
   // Fetch analyses for the calculations
   fetch('/api/v1/dataset?limit=1000').then(r => r.json()).then(dataset => {
-    const analyses = dataset.data.filter(d => d.type === 'analysis');
+    const rawAnalyses = dataset.data.filter(d => d.type === 'analysis');
+    // Dedup by install_id — same pattern as analysis.html.
+    const latest = {};
+    for (const a of rawAnalyses) {
+      const id = a.install_id || 'unknown';
+      latest[id] = a;
+    }
+    const analyses = Object.values(latest);
 
     const cards = [
       { value: stats.total_submissions, label: 'Contributors' },
