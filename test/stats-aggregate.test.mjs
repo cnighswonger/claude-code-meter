@@ -379,6 +379,40 @@ test("distinct_install_ids: empty dataset → 0", () => {
   assert.equal(out.distinct_install_ids, 0);
 });
 
+// --- earliest / latest must reflect raw history, not deduped set (issue #17) ---
+
+test("earliest / latest reflect raw submission timestamps, not deduped (issue #17)", () => {
+  // Pre-fix (PR #14 regression): with one install and multiple snapshots,
+  // dedup collapsed the dates array to the latest snapshot's timestamp,
+  // making earliest === latest and erasing the "first submission ever"
+  // signal. Post-fix: dates are collected from raw rows so the historical
+  // range is preserved while totals still use the deduped data.
+  const rows = [
+    {
+      type: "analysis",
+      install_id: "a",
+      generated_at: "2026-04-01T00:00:00Z",
+      n_calls: 10,
+      n_sessions: 1,
+      model_splits: {},
+    },
+    {
+      type: "analysis",
+      install_id: "a",
+      generated_at: "2026-05-15T00:00:00Z",
+      n_calls: 50,
+      n_sessions: 5,
+      model_splits: {},
+    },
+  ];
+  const out = computeStatsAggregate(rows);
+  assert.equal(out.earliest, "2026-04-01T00:00:00Z", "earliest must show oldest submission");
+  assert.equal(out.latest, "2026-05-15T00:00:00Z", "latest must show newest submission");
+  // Totals continue to use deduped data — only the latest snapshot counts.
+  assert.equal(out.total_calls, 50);
+  assert.equal(out.distinct_install_ids, 1);
+});
+
 test("dedupAnalysisByInstallId helper: directly callable, returns deduped row array", () => {
   // The helper is exported so future consumers can apply the same dedup
   // policy outside computeStatsAggregate (e.g. CSV exports, future analytics).

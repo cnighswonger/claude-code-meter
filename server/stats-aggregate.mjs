@@ -44,12 +44,27 @@ export function computeStatsAggregate(rows) {
     else if (r) shareSubmissions++;
   }
 
+  // earliest / latest reflect the FULL submission history (raw rows), not
+  // the deduped set. Otherwise with one install + N submissions both
+  // collapse to the latest snapshot's timestamp, hiding when the contributor
+  // first started reporting and breaking staleness-detection consumers.
+  // (See claude-code-meter#17.) Totals continue to use the deduped data.
+  const dates = [];
+  for (const r of rows) {
+    if (r && r.type === "analysis") {
+      if (r.generated_at) dates.push(r.generated_at);
+      else if (r.data_range && r.data_range.end) dates.push(r.data_range.end);
+    } else if (r && r.date) {
+      dates.push(r.date);
+    }
+  }
+  dates.sort();
+
   const deduped = dedupAnalysisByInstallId(rows);
   const models = new Map();
   const distinctInstallIds = new Set();
   let totalCalls = 0;
   let totalSessions = 0;
-  const dates = [];
 
   for (const r of deduped) {
     if (r && r.type === "analysis") {
@@ -64,8 +79,6 @@ export function computeStatsAggregate(rows) {
           models.set(modelName, (models.get(modelName) || 0) + calls);
         }
       }
-      if (r.generated_at) dates.push(r.generated_at);
-      else if (r.data_range && r.data_range.end) dates.push(r.data_range.end);
     } else if (r) {
       // Default: treat as SharePayloadSchema (legacy rows have no `type`).
       const turns = Number.isFinite(r.turn_count) ? r.turn_count : 0;
@@ -74,11 +87,8 @@ export function computeStatsAggregate(rows) {
       if (r.model) {
         models.set(r.model, (models.get(r.model) || 0) + turns);
       }
-      if (r.date) dates.push(r.date);
     }
   }
-
-  dates.sort();
 
   return {
     total_submissions: rows.length,
