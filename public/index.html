@@ -199,7 +199,7 @@ function renderStatsRow(stats, analysisCount) {
     const analyses = Object.values(latest);
 
     const cards = [
-      { value: stats.total_submissions, label: 'Contributors' },
+      { value: stats.distinct_install_ids ?? 0, label: 'Contributors' },
       { value: analysisCount, label: 'Analysis Reports' },
       { value: analyses.reduce((s, a) => s + (a.n_calls || 0), 0).toLocaleString(), label: 'Total API Calls' },
       { value: analyses.reduce((s, a) => s + (a.n_sessions || 0), 0), label: 'Total Sessions' },
