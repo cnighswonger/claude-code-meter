@@ -12,10 +12,17 @@
  * Returns:
  *   {
  *     total_submissions, submissions_by_type: { share, analysis },
- *     total_calls, total_turns (back-compat alias for total_calls),
+ *     distinct_install_ids, total_calls,
+ *     total_turns (back-compat alias for total_calls),
  *     total_sessions, models (CALL counts per model name),
  *     earliest, latest
  *   }
+ *
+ * `distinct_install_ids` counts unique `install_id` values across deduped
+ * analysis rows — i.e. how many distinct installs have ever reported.
+ * Analysis rows without an `install_id` and share rows do not contribute.
+ * The share-vs-analysis asymmetry is intentional and deferred — see PR
+ * referencing this field for scope rationale.
  *
  * Prior to 2026-04-26 the endpoint assumed SharePayloadSchema shape and
  * returned `total_turns: 0` and `models: { undefined: N }` for analysis
@@ -39,12 +46,14 @@ export function computeStatsAggregate(rows) {
 
   const deduped = dedupAnalysisByInstallId(rows);
   const models = new Map();
+  const distinctInstallIds = new Set();
   let totalCalls = 0;
   let totalSessions = 0;
   const dates = [];
 
   for (const r of deduped) {
     if (r && r.type === "analysis") {
+      if (r.install_id) distinctInstallIds.add(r.install_id);
       totalCalls += Number.isFinite(r.n_calls) ? r.n_calls : 0;
       totalSessions += Number.isFinite(r.n_sessions) ? r.n_sessions : 0;
       if (r.model_splits && typeof r.model_splits === "object") {
@@ -74,6 +83,7 @@ export function computeStatsAggregate(rows) {
   return {
     total_submissions: rows.length,
     submissions_by_type: { share: shareSubmissions, analysis: analysisSubmissions },
+    distinct_install_ids: distinctInstallIds.size,
     total_calls: totalCalls,
     total_turns: totalCalls, // back-compat alias
     total_sessions: totalSessions,

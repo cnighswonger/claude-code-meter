@@ -311,6 +311,74 @@ test("dedup falls back to data_range.end when generated_at is missing", () => {
   assert.equal(out.total_sessions, 5);
 });
 
+// --- distinct_install_ids (Contributors card) ---
+
+test("distinct_install_ids: two analysis rows from same install_id → count 1", () => {
+  // Same scenario as the dedup regression test, asserted on the new field.
+  // Pre-fix the Contributors card read `total_submissions` (=2 raw rows)
+  // and mislabeled two reports from one install as two contributors.
+  const rows = [
+    {
+      type: "analysis",
+      install_id: "39b82237b25bbfc7",
+      generated_at: "2026-04-30T06:37:00Z",
+      n_calls: 100,
+      n_sessions: 1,
+      model_splits: {},
+    },
+    {
+      type: "analysis",
+      install_id: "39b82237b25bbfc7",
+      generated_at: "2026-05-06T06:37:00Z",
+      n_calls: 200,
+      n_sessions: 2,
+      model_splits: {},
+    },
+  ];
+  const out = computeStatsAggregate(rows);
+  assert.equal(out.distinct_install_ids, 1);
+});
+
+test("distinct_install_ids: analysis rows from different installs → count matches install count", () => {
+  const rows = [
+    { type: "analysis", install_id: "a", generated_at: "2026-05-01T00:00:00Z", n_calls: 10, n_sessions: 1, model_splits: {} },
+    { type: "analysis", install_id: "b", generated_at: "2026-05-02T00:00:00Z", n_calls: 20, n_sessions: 2, model_splits: {} },
+    { type: "analysis", install_id: "c", generated_at: "2026-05-03T00:00:00Z", n_calls: 30, n_sessions: 3, model_splits: {} },
+  ];
+  const out = computeStatsAggregate(rows);
+  assert.equal(out.distinct_install_ids, 3);
+});
+
+test("distinct_install_ids: analysis row without install_id is NOT counted", () => {
+  // Legacy / malformed analysis rows lacking install_id are unattributable
+  // — they pass through dedup but shouldn't inflate the contributor count.
+  const rows = [
+    { type: "analysis", install_id: "a", generated_at: "2026-05-01T00:00:00Z", n_calls: 10, n_sessions: 1, model_splits: {} },
+    { type: "analysis", generated_at: "2026-05-02T00:00:00Z", n_calls: 20, n_sessions: 2, model_splits: {} },
+    { type: "analysis", generated_at: "2026-05-03T00:00:00Z", n_calls: 30, n_sessions: 3, model_splits: {} },
+  ];
+  const out = computeStatsAggregate(rows);
+  assert.equal(out.distinct_install_ids, 1);
+});
+
+test("distinct_install_ids: share rows with install_id do NOT contribute (scope-deferred asymmetry)", () => {
+  // Intentional: this PR scopes the contributor count to analysis-type
+  // submissions only. Share-side contributor counting is a separate scope
+  // decision (same family as the share-retirement question deferred in
+  // issue #13).
+  const rows = [
+    { v: 1, install_id: "share-only-install", date: "2026-04-20", model: "x", turn_count: 10 },
+    { type: "analysis", install_id: "analysis-install", generated_at: "2026-05-01T00:00:00Z", n_calls: 5, n_sessions: 1, model_splits: {} },
+  ];
+  const out = computeStatsAggregate(rows);
+  assert.equal(out.distinct_install_ids, 1);
+});
+
+test("distinct_install_ids: empty dataset → 0", () => {
+  const out = computeStatsAggregate([]);
+  assert.equal(out.distinct_install_ids, 0);
+});
+
 test("dedupAnalysisByInstallId helper: directly callable, returns deduped row array", () => {
   // The helper is exported so future consumers can apply the same dedup
   // policy outside computeStatsAggregate (e.g. CSV exports, future analytics).
