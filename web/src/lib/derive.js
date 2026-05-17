@@ -8,9 +8,11 @@
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
-// The current dataset row has plan_tier="unknown". The legacy dashboard assumed
-// Max 5x. When contributors start submitting with a real plan_tier, we'll read
-// that field directly and remove this default. Override here if needed.
+// The current dataset row has plan_tier="unknown". Until contributors submit
+// with a real plan_tier, the multiplier math has to assume something. The
+// legacy dashboard assumed Max 5x. Keep that, BUT surface the assumption in
+// the UI so a viewer never reads inflated multipliers without seeing the
+// caveat. See the `tierConfirmed` flag below for how this propagates.
 export const OBSERVED_TIER = "max_5x";
 
 // Plan list prices (USD/month). Pinned to claude.com/pricing 2026-05-01.
@@ -42,10 +44,27 @@ export function deriveMetrics({ stats, analyses }) {
   const totalSessions   = stats?.total_sessions ?? sumBy(analyses, (a) => a.n_sessions);
   const analysisReports = n;
 
-  // Days observed: prefer the stats earliest/latest. Fall back to data_range.
-  const earliest = stats?.earliest ? new Date(stats.earliest) : earliestDate(analyses);
-  const latest   = stats?.latest   ? new Date(stats.latest)   : latestDate(analyses);
-  const daysObserved = Math.max(1, daysBetween(earliest, latest));
+  // Days observed = the DATA COVERAGE WINDOW of the deduped primary analysis row,
+  // NOT the submission-history span on /api/v1/stats.
+  //
+  // /api/v1/stats.{earliest,latest} reflect raw submission event timestamps
+  // (when rows were POSTed). They drift forward every time someone re-submits.
+  // The cost figures inside cost_analysis.* describe the analysis row's
+  // data_range.{start,end} window. Dividing a 42-day cost by a 16-day submission
+  // span inflates every downstream extrapolation. Derive from data_range so the
+  // math is honest.
+  const primary = analyses[0]; // after dedupAnalyses, [0] is newest per install
+  const coverageStart = primary?.data_range?.start
+    ? new Date(primary.data_range.start)
+    : earliestDate(analyses);
+  const coverageEnd = primary?.data_range?.end
+    ? new Date(primary.data_range.end)
+    : latestDate(analyses);
+  const daysObserved = Math.max(1, daysBetween(coverageStart, coverageEnd));
+
+  // Submission-history span — used for the byline "updated" date, not for math.
+  const earliest = stats?.earliest ? new Date(stats.earliest) : coverageStart;
+  const latest   = stats?.latest   ? new Date(stats.latest)   : coverageEnd;
 
   // Cost aggregates
   const totalApiCost     = sumBy(analyses, (a) => a.cost_analysis?.total_api_cost || 0);
@@ -53,8 +72,15 @@ export function deriveMetrics({ stats, analyses }) {
   const cacheSavingsSum  = sumBy(analyses, (a) => a.cost_analysis?.cache_savings || 0);
   const cacheSavingsPct  = meanBy(analyses, (a) => a.cost_analysis?.cache_savings_pct || 0);
 
+  // Plan tier resolution. If the primary analysis row reports a real plan_tier,
+  // use it. Otherwise fall back to OBSERVED_TIER and flag the assumption.
+  const rawTier = primary?.plan_tier;
+  const isKnownTier = rawTier && rawTier !== "unknown" && PLAN_PRICES[rawTier];
+  const resolvedTier = isKnownTier ? rawTier : OBSERVED_TIER;
+  const tierConfirmed = Boolean(isKnownTier);
+  const plan = PLAN_PRICES[resolvedTier];
+
   // Subscription cost paid (computed from observed days × plan price)
-  const plan = PLAN_PRICES[OBSERVED_TIER];
   const subscriptionCostPaid = plan ? (plan.monthly / 30) * daysObserved : 0;
 
   // Monthly projection: extrapolate observed API value to 30 days
@@ -121,8 +147,9 @@ export function deriveMetrics({ stats, analyses }) {
     totalApiCost, noCacheCost, cacheSavingsSum, cacheSavingsPct,
     subscriptionCostPaid, monthlyProjection,
 
-    // plans
+    // plans (tierConfirmed=false means the UI should flag the assumption)
     plan, planMultipliers, planValues, effectiveMultiplier,
+    resolvedTier, tierConfirmed,
 
     // regression
     olsCoefficients, rSquared, correlations, meanExponent, fallbackPct,

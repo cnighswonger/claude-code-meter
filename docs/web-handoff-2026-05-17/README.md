@@ -205,16 +205,43 @@ The current API does NOT expose:
 - **Bundles inline:** Highcharts (core + highcharts-more for waterfall + solid-gauge + annotations + accessibility), React 18
 - **Fonts:** system stack only (matches existing convention; no Google Fonts loaded). See "Fonts" below for the optional self-hosted-fonts path.
 
-Total expected gzipped bundle size: ~150 KB JS + ~10 KB CSS. Highcharts dominates;
-expect ~120 KB of the JS to be its core + modules.
+Total expected gzipped bundle size: ~210 KB JS + ~10 KB CSS. Highcharts core +
+highcharts-more (for waterfall) + solid-gauge + accessibility dominate; expect
+~190 KB of the JS to be Highcharts. If this is too large, code-split via dynamic
+`import()` of the chart components — each chart can be its own chunk loaded
+on-demand. Not done by default because the page is single-render and all
+charts are visible.
 
 ---
 
-## Server: no changes required
+## Server: no changes required (with two caveats)
 
 `server/index.mjs` already serves any file from `public/` via its static handler.
 The new `public/index.html` and `public/assets/*` are served the same way the old
 ones were. The Caddyfile is unchanged.
+
+Two small server-side items worth confirming before or alongside the deploy:
+
+1. **MIME types for fonts.** If you take the optional self-hosted-fonts
+   upgrade (`@fontsource/*` packages), Vite will emit `.woff2` and `.woff`
+   files into `public/assets/`. Confirm `server/index.mjs`'s `MIME_TYPES` table
+   includes:
+   ```js
+   '.woff2': 'font/woff2',
+   '.woff':  'font/woff',
+   ```
+   Without these, the browser falls back to `application/octet-stream` and
+   most browsers still load the font correctly, but some accessibility tools
+   and older browsers complain. Skip this step entirely if fonts stay off.
+
+2. **CORS on `/api/v1/stats`.** The dev server proxies `/api` to
+   `https://meter.vsits.co`. The dashboard fetches both `/api/v1/dataset`
+   (confirmed `Access-Control-Allow-Origin: *`) and `/api/v1/stats`. If
+   `/api/v1/stats` doesn't currently set the same header, `npm run dev` will
+   work (Vite's proxy handles it) but external dashboards reading
+   `/api/v1/stats` from a different origin won't. Adding the header to
+   `/api/v1/stats` for symmetry with `/dataset` is a one-line change in
+   `server/index.mjs` and worth doing.
 
 If the static handler is path-prefix-strict (it probably is, given the current
 shape), confirm it serves `/assets/*` from `public/assets/`. If not, a one-line

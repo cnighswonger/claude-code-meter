@@ -70,6 +70,10 @@ export function Nav() {
 // ─── Lede ─────────────────────────────────────────────────────────────────
 export function Lede({ metrics }) {
   const updated = metrics.latest.toISOString().slice(0, 10);
+  const m20x = metrics.planMultipliers.max_20x;
+  const m5x  = metrics.planMultipliers.max_5x;
+  const showTierCaveat = !metrics.tierConfirmed;
+
   return (
     <section className="lede" id="top">
       <div className="wrap-wide">
@@ -84,8 +88,8 @@ export function Lede({ metrics }) {
         </div>
 
         <h1 className="head">
-          Max 20x delivers <em>~2× the value per dollar</em> of Pro and Max 5x —
-          and Opus 4.7 burns quota at <em>{metrics.advisory.burnMultiplier}× the rate of 4.6.</em>
+          Max 20x delivers <em>~{(m20x / m5x).toFixed(1)}× the value per dollar</em> of Pro and Max 5x —
+          and that gap <em>widens with every cache hit.</em>
         </h1>
 
         <p className="deck">
@@ -94,6 +98,19 @@ export function Lede({ metrics }) {
           on this page derives from the open dataset below — what each token type really
           costs against quota, how the tiers compare, and where the cliffs are.
         </p>
+
+        {showTierCaveat && (
+          <p className="deck" style={{
+            fontSize: 13.5, color: "var(--muted)", fontFamily: "var(--f-mono)",
+            lineHeight: 1.55, borderLeft: "2px solid var(--warn)",
+            paddingLeft: 12, marginTop: -8, marginBottom: 22,
+          }}>
+            <b style={{ color: "var(--warn)" }}>caveat:</b> the only contributor has
+            <code style={{ color: "var(--ink)" }}> plan_tier:"unknown"</code>. Multipliers
+            below assume <b style={{ color: "var(--ink)" }}>Max 5x</b>. Confirm with the
+            operator or your own data before treating as actionable.
+          </p>
+        )}
 
         <div className="byline">
           <b>Veritas Supera IT Solutions</b>
@@ -205,18 +222,20 @@ export function Findings({ metrics }) {
           </div>
 
           <div className="finding">
-            <span className="tag bad">▲ Cost · Model selection</span>
-            <div className="big">{adv}<span className="x">×</span></div>
-            <div className="lbl">Opus 4.7 · Q5h burn vs 4.6</div>
-            <h3>Opus 4.7 quietly burns quota at {adv}× the rate of 4.6.</h3>
+            <span className="tag bad">▲ Hypothesis · Model selection</span>
+            <div className="big">{adv}<span className="x">?</span></div>
+            <div className="lbl">Opus 4.7 · Q5h burn vs 4.6 (unconfirmed)</div>
+            <h3>Opus 4.7 may burn quota at ~{adv}× the rate of 4.6 — we can't prove it yet.</h3>
             <p>
-              For equivalent visible token counts, Opus 4.7 charges Q5h at roughly
-              twice 4.6. The gap is consistent with adaptive thinking tokens being
-              billed against quota but not reported in the API usage response.
+              The visible per-turn metric in this dataset shows the opposite direction.
+              Our hypothesis is that adaptive thinking tokens are billed against Q5h but
+              not reported in the API <code style={{ fontFamily: "var(--f-mono)", fontSize: ".9em" }}>usage</code> response.
+              Until Anthropic exposes a per-visible-token quota field, this stays a labeled
+              hypothesis, not a finding.
             </p>
             <div className="foot">
-              <span>Advisory · open issue with Anthropic</span>
-              <a href="#advisory">Detail →</a>
+              <span>Hypothesis · open issue</span>
+              <a href="#advisory">Read more →</a>
             </div>
           </div>
 
@@ -367,31 +386,42 @@ export function PlanTable({ metrics }) {
 // ─── Advisory ─────────────────────────────────────────────────────────────
 export function Advisory({ metrics }) {
   const a = metrics.advisory;
+  const opus46 = metrics.modelSplits["claude-opus-4-6"]?.avg_q5h_per_turn || 0;
+  const opus47 = metrics.modelSplits["claude-opus-4-7"]?.avg_q5h_per_turn || 0;
+  const visibleRatio = opus46 > 0 ? (opus47 / opus46) : null;
+
   return (
     <section id="advisory">
       <div className="wrap-wide">
         <div className="section-eye">
           <span className="num">04</span>
-          <span>Live advisory</span>
+          <span>Hypothesis under investigation</span>
           <span className="rule" />
         </div>
         <div className="advisory">
-          <div className="tag"><span className="sigil" />Opus 4.7 quota burn</div>
+          <div className="tag"><span className="sigil" />Opus 4.7 hidden-token hypothesis</div>
           <h3>
-            Opus 4.7 charges Q5h at <em>~{a.burnMultiplier}× the rate of Opus 4.6</em> for
-            equivalent visible token counts.
+            We <em>suspect</em> Opus 4.7 burns Q5h at ~{a.burnMultiplier}× the rate of 4.6 —
+            <em>but the visible data doesn't show it.</em>
           </h3>
           <p>
-            The gap is consistent with adaptive thinking tokens being billed against quota
-            but not reported in the API usage response. Expect your Q5h budget to go roughly
-            half as far on 4.7. If you're tier-rationing, defaulting to 4.6 for routine
-            tool calls and reserving 4.7 for harder problems is currently the cheapest
-            heuristic in the dataset.
+            Per-turn Q5h drain in the deduped dataset reads{" "}
+            {visibleRatio !== null ? (
+              <>
+                <b style={{ color: "var(--ink)" }}>{visibleRatio.toFixed(2)}×</b>{" "}
+                for Opus 4.7 vs 4.6 — i.e. 4.7 currently looks <em>cheaper</em>, not more expensive.
+              </>
+            ) : (<>insufficient sample to compute.</>)}{" "}
+            The hypothesis: Opus 4.7's adaptive thinking tokens are charged against quota
+            but <em>not reported</em> in the API <code style={{ fontFamily: "var(--f-mono)", fontSize: ".9em", color: "var(--ink)" }}>usage</code>{" "}
+            response, so each visible token “costs more” than it appears. We can't confirm
+            this from the current data — it requires a per-visible-token quota field the
+            API doesn't expose yet. The chart below is illustrative, not measured.
           </p>
           <Opus47Chart metrics={metrics} />
           <div style={{ display: "flex", gap: 14, marginTop: 18, fontSize: 13, color: "var(--muted)" }}>
-            <a className="link" href="https://github.com/cnighswonger/claude-code-meter/issues">Open issue tracker →</a>
-            <a className="link" href="https://github.com/cnighswonger/claude-code-meter">Full analysis →</a>
+            <a className="link" href="https://github.com/cnighswonger/claude-code-meter/issues">Track the open issue →</a>
+            <a className="link" href="https://github.com/cnighswonger/claude-code-meter">Methodology →</a>
           </div>
         </div>
       </div>

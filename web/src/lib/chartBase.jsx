@@ -9,11 +9,9 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import Highcharts from "highcharts";
-import "highcharts/highcharts-more";       // waterfall, paired column, area-range
+import "highcharts/highcharts-more";       // waterfall, paired column
 import "highcharts/modules/solid-gauge";   // cache gauge
-import "highcharts/modules/annotations";   // plot annotations
 import "highcharts/modules/accessibility"; // a11y descriptions for charts
-import "highcharts/modules/pattern-fill";  // optional patterned fills
 
 // ─── Theme helpers ─────────────────────────────────────────────────────────
 
