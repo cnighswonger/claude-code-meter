@@ -18,7 +18,7 @@ follows. Iterate against the new archive.
 |---|-----|--------|--------------|
 | 1 | Blocker | Fixed | `daysObserved` now derived from primary analysis row's `data_range.{start,end}`, not from `stats.{earliest,latest}` |
 | 2 | Blocker | Fixed | Opus 4.7 claim removed from lede headline; Findings card + Advisory section reframed as "hypothesis under investigation" with the visible-data contradiction surfaced explicitly |
-| 3 | Blocker | Partially fixed | Dropped `annotations` and `pattern-fill` imports; README's bundle-size estimate updated to ~210 KB gzip. Code-splitting noted but not implemented (page renders all charts on load) |
+| 3 | Blocker | Partially fixed | Dropped `annotations` and `pattern-fill` imports (~20 KB saved off the original ~260 KB). Measured post-revision bundle is **~240 KB gzipped** per Codex's empirical `npm run build` — closer to the original than to the original ~150 KB claim. Code-splitting noted but not implemented (page renders all charts on load) |
 | 4 | Blocker | Fixed | `tierConfirmed` flag plumbed through `deriveMetrics`; when `plan_tier === "unknown"` the lede now renders a `caveat:` block above the byline disclosing the assumption |
 | 5 | Minor | Documented | README now lists the `.woff2`/`.woff` MIME-types addition as an explicit step IF the self-hosted-fonts upgrade is taken |
 | 6 | Minor | Documented | README calls out the `/api/v1/stats` CORS symmetry with `/dataset` as a one-line server change |

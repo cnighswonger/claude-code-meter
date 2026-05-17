@@ -139,7 +139,7 @@ Most relevant implication for the redesign: introducing React + JSX-via-Babel-in
 
 - **Framework:** none. Vanilla HTML + ES2020 JS.
 - **Build command:** none. `git pull` puts the source files in place; the Node server serves them directly.
-- **Output directory:** `public/` is both source and served. If the redesign introduces a build step, the convention should be `public/dist/` (or similar) with the build artifacts, and the Node server's static-file route gets pointed at the build output instead of the source.
+- **Output directory:** `public/` is both source and served. *(2026-05-17 update: the redesign in `web/` now uses Vite with `outDir: '../public'` and `emptyOutDir: false` — the build writes directly into the live `public/` directory, replacing `public/index.html` and adding `public/assets/*` while preserving `public/analysis.html` and `public/vendor/*`. The original speculative `public/dist/` convention in this paragraph was not adopted.)*
 - **Dev server:** `npm run start:server` runs the production server (`node server/index.mjs`) on `PORT` (env, default 3847). There is no separate dev server with hot reload — local development is "edit the file, refresh the browser."
 - **Node version:** `>=18.0.0` declared in `engines`; production runs 20 LTS. The server uses ESM (`"type": "module"`) and Node's built-in `http`/`fs`/`crypto`.
 - **Lockfile:** `package-lock.json` (npm).
@@ -436,7 +436,7 @@ In rough priority order:
 
 2. **Two HTML files duplicate data-fetch and dedup logic.** `index.html` and `analysis.html` each fetch `/api/v1/dataset?limit=N` and apply the install_id dedup pattern client-side. The redesign should factor this into a shared utility (one fetcher, one dedup helper, both consumed by both pages). The duplication today is intentional simplicity, not a defended design choice — happy to lose it.
 
-3. **Babel-in-browser is not the production path.** The redesign currently uses `@babel/standalone` to transpile JSX in the browser. That's fine for prototyping; it's slow on first paint (Babel itself is ~600 KB gzipped) and burns CPU on every page load. The production deploy should pre-build the JSX into vanilla JS via Vite or esbuild and serve the built output. Vite is the lower-friction choice — `npm run build` produces `dist/`, point the Node server at `dist/` instead of `public/` (or copy `dist/*` to `public/` as a deploy step). Either way, no Babel-in-browser in production.
+3. **Babel-in-browser is not the production path.** The redesign currently uses `@babel/standalone` to transpile JSX in the browser. That's fine for prototyping; it's slow on first paint (Babel itself is ~600 KB gzipped) and burns CPU on every page load. The production deploy should pre-build the JSX into vanilla JS via Vite or esbuild and serve the built output. *(2026-05-17 update: resolved in this PR. The `web/` Vite project's `npm run build` writes directly to `../public/` per its `outDir` config — replacing `public/index.html` and adding `public/assets/*` while preserving `analysis.html` and `vendor/`. No separate `dist/` directory; no copy step needed. Node server serves the build output via its existing static-file handler.)*
 
 4. **Highcharts version drift.** The vendored files in `public/vendor/` were downloaded once in April 2026 and haven't been refreshed. If the redesign needs newer chart types or bug fixes, the vendored files need to be re-downloaded from highcharts.com. (Or — see §9 — swap to ECharts/Plot and skip the vendoring entirely.)
 
