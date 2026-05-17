@@ -202,15 +202,10 @@ The current API does NOT expose:
 - **Output dir:** `../public/` (i.e. `/opt/claude-code-meter/public/`) — same directory the existing static files live in
 - **`emptyOutDir: false`** so the build doesn't wipe `analysis.html` or `vendor/`
 - **Asset filenames:** `assets/[name]-[hash].js` and `assets/[name]-[hash].css`, content-hashed for cache busting
-- **Bundles inline:** Highcharts (core + highcharts-more for waterfall + solid-gauge + annotations + accessibility), React 18
+- **Bundles inline:** Highcharts (core + highcharts-more for waterfall + solid-gauge + accessibility), React 18. (`annotations` and `pattern-fill` modules were dropped in this revision per the review — neither was referenced from `web/src`.)
 - **Fonts:** system stack only (matches existing convention; no Google Fonts loaded). See "Fonts" below for the optional self-hosted-fonts path.
 
-Total expected gzipped bundle size: ~210 KB JS + ~10 KB CSS. Highcharts core +
-highcharts-more (for waterfall) + solid-gauge + accessibility dominate; expect
-~190 KB of the JS to be Highcharts. If this is too large, code-split via dynamic
-`import()` of the chart components — each chart can be its own chunk loaded
-on-demand. Not done by default because the page is single-render and all
-charts are visible.
+Measured gzipped bundle size on this revision: **~240 KB JS + ~10 KB CSS** (per Codex's empirical `npm run build` during re-review — `assets/index-*.js` at 240.20 KB gzip). Highcharts core + highcharts-more + solid-gauge + accessibility dominate; expect ~220 KB of the JS to be Highcharts. If this is too large, code-split via dynamic `import()` of the chart components — each chart can be its own chunk loaded on-demand. Not done by default because the page is single-render and all charts are visible.
 
 ---
 
@@ -302,8 +297,8 @@ After `npm run build` succeeds and the page is live:
 1. `curl -s https://meter.vsits.co/ | head -20` — should return a doctype and the React app shell.
 2. Browser-load `https://meter.vsits.co/`. Open DevTools → Network.
 3. Confirm:
-   - `index.html` → 200, ~6 KB
-   - `assets/*.js` → 200, ~150 KB gzipped
+   - `index.html` → 200, ~1 KB (Vite shell)
+   - `assets/*.js` → 200, **~240 KB gzipped** (Highcharts dominates — see "Build details" above for the measured figure as of this revision)
    - `assets/*.css` → 200, ~10 KB gzipped
    - `/api/v1/stats` → 200, JSON
    - `/api/v1/dataset?limit=1000` → 200, JSON

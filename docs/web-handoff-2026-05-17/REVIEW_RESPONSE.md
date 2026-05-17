@@ -141,9 +141,15 @@ Option C is taken.
 Smoke tests run against the modified files:
 
 - `npm install` succeeds from scratch on the package.json
-- `npm run build` produces `dist/index.html` + `dist/assets/*` with the
-  documented filename pattern; output size matches the ~210 KB gzip claim
-  (within ±10 KB depending on Highcharts patch version)
+- `npm run build` produces `../public/index.html` + `../public/assets/*`
+  (vite.config.mjs sets `outDir: '../public'` with `emptyOutDir: false`, so
+  the build replaces the existing root-level `public/index.html` and adds
+  `public/assets/*` while leaving `public/analysis.html` and `public/vendor/*`
+  untouched). Measured JS bundle size on this revision: **~240 KB gzipped**
+  (per Codex's empirical build during re-review — `index-*.js` came out at
+  240.20 KB gzip). The "~210 KB" estimate in the original v2 response was
+  optimistic; the dropped `annotations` + `pattern-fill` imports saved
+  ~20 KB, not the implied ~50 KB. Updated in this same revision.
 - Dev server (`npm run dev`) starts, proxies `/api/v1/*` to production, page
   hydrates and renders all 8 charts with live data
 - Page renders correctly with `plan_tier:"unknown"` (the live state) and
