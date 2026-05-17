@@ -142,4 +142,12 @@ If money is no object and you want to keep the current build verbatim:
 
 **Rationale (2026-05-17):** `meter.vsits.co` is open-source, non-revenue-generating community research. Operator's reading: this falls inside Highcharts' non-commercial / personal-use terms. Revisit if the site's posture shifts (revenue, paywall, embedded in a commercial product, etc.).
 
+**Hardening pass (2026-05-17, post-decision):** A consult with the Highcharts GPT noted that the non-commercial allowance applies when the project is "strictly non-commercial and you are not charging for access or distribution" — and that a commercial license is required if the project is "intended for distribution or commercial gain." To weaken any "this is a corporate product surface" reading and tighten the non-commercial posture, all outbound hyperlinks from the meter site and its repo back to the `vsits.co` marketing website were removed:
+
+- `public/analysis.html` — unlinked the "Veritas Supera IT Solutions LLC" footer reference; rewrote the "5x multiplier" footnote to point at the project README instead of the `vsits.co/three-layer-gate-quota-overage/` blog post.
+- `README.md` — dropped the "Blog series" link to `vsits.co/three-layer-gate-quota-overage/` from the Related section.
+- `package.json` — removed the `(https://vsits.co)` URL portion from the `author` field; kept the `<dev@vsits.co>` email since that's the npm-author convention for ownership identification.
+
+The redesign's React tree (`web/src/components/sections.jsx`) already renders "VSITS" and "Veritas Supera IT Solutions" as plain text with no hyperlinks, so no changes were needed there. The `meter.vsits.co` hostname references throughout the codebase (DNS, Caddy config, `DEFAULT_SERVER` constant, OG metadata) are not hyperlinks to the marketing site — they're the meter site's own identity — and stay.
+
 — Design Agent

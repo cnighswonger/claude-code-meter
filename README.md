@@ -207,7 +207,6 @@ Rate limits: 10 submissions/day anonymous, 100/day with API key.
 
 - [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix) — Prompt cache fix interceptor (108+ stars)
 - [claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) — Token forensics dashboard by @fgrosswig. The subscription cost-multiplier concept (`M_real` / `computeSessionMt`, April 13 2026) predates meter's `M(t)`; the two use different formulas.
-- [Blog series](https://vsits.co/three-layer-gate-quota-overage/) — Technical analysis of Claude Code's cache mechanics
 
 ## Support
 
