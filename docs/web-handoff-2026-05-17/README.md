@@ -110,9 +110,9 @@ sibling of `public/`, `server/`, and `src/`. Copy it verbatim:
 The Vite build is configured with `outDir: '../public'` and `emptyOutDir: false`,
 so:
 
-- `web/dist/index.html` lands at `public/index.html` (replaces the existing dashboard)
-- `web/dist/assets/*` lands at `public/assets/*` (new directory)
-- `public/analysis.html` and `public/vendor/*` are not touched by the build
+- The build writes `index.html` directly to `public/index.html` (replacing the existing dashboard) — Vite does not create a `web/dist/` intermediate; `outDir` is `../public`.
+- The build writes content-hashed JS / CSS to `public/assets/*` (new directory).
+- `public/analysis.html` and `public/vendor/*` are not touched by the build.
 
 ---
 

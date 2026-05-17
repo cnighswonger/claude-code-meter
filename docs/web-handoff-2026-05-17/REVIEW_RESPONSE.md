@@ -89,13 +89,14 @@ dashboard does not contradict itself.
 ### 3. Bundle size
 
 `annotations` and `pattern-fill` modules dropped from `web/src/lib/chartBase.jsx`.
-Updated README estimate: ~210 KB gzipped JS + ~10 KB CSS, with a note that
-Highcharts core + highcharts-more + solid-gauge + accessibility account for
-~190 KB of that. Code-splitting via dynamic `import()` is noted as a follow-up
+Measured post-revision README figure: ~240 KB gzipped JS + ~10 KB CSS (per
+Codex's empirical `npm run build` during re-review — `assets/index-*.js` came
+out at 240.20 KB gzip). Highcharts core + highcharts-more + solid-gauge +
+accessibility account for ~220 KB of that. Code-splitting via dynamic `import()` is noted as a follow-up
 but not implemented — every chart on the page is above the fold and visible at
 load, so splitting them out into chunks adds RTT without saving bytes.
 
-If 210 KB still reads too high for the deploy, the cheapest next step is to
+If 240 KB still reads too high for the deploy, the cheapest next step is to
 strip the accessibility module (~30 KB) and accept losing the a11y
 descriptions on the chart elements. Not recommended — accessibility was
 explicitly called out as a redesign goal — but available if needed.
