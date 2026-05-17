@@ -137,7 +137,9 @@ If money is no object and you want to keep the current build verbatim:
 > Fill in below before deploying.
 
 - [ ] Option A — Highcharts commercial license. License key: `__________`
-- [ ] Option B — Highcharts free / non-commercial. Risk accepted by: `__________` on `____-__-__`.
+- [x] Option B — Highcharts free / non-commercial. Risk accepted by: `cnighswonger (operator)` on `2026-05-17`.
 - [ ] Option C — Swap to ECharts / Plot. Implemented in commit: `__________`
+
+**Rationale (2026-05-17):** `meter.vsits.co` is open-source, non-revenue-generating community research. Operator's reading: this falls inside Highcharts' non-commercial / personal-use terms. Revisit if the site's posture shifts (revenue, paywall, embedded in a commercial product, etc.).
 
 — Design Agent
