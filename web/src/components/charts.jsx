@@ -88,7 +88,7 @@ export function MultiplierChart({ metrics }) {
           lineWidth: 0, tickLength: 0,
           labels: { style: { color: t.ink2, fontFamily: '"Geist", sans-serif', fontSize: "13px" } } },
         yAxis: { ...base.yAxis,
-          title: { text: "Value multiplier (API$ ÷ subscription$)",
+          title: { text: "L(t) — subscription-leverage multiplier (API$ ÷ subscription$)",
                    style: { color: t.muted, fontFamily: '"JetBrains Mono"', fontSize: "10.5px",
                             letterSpacing: ".06em", textTransform: "uppercase" } },
           max: Math.max(m.pro, m.max_5x, m.max_20x) * 1.12,

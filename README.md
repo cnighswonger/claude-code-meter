@@ -206,7 +206,7 @@ Rate limits: 10 submissions/day anonymous, 100/day with API key.
 ## Related
 
 - [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix) — Prompt cache fix interceptor (108+ stars)
-- [claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) — Token forensics dashboard by @fgrosswig. The subscription cost-multiplier concept (`M_real` / `computeSessionMt`, April 13 2026) predates meter's `M(t)`; the two use different formulas.
+- [claude-usage-dashboard](https://github.com/fgrosswig/claude-usage-dashboard) — Token forensics dashboard by @fgrosswig. @fgrosswig's `M_real` / `computeSessionMt` (April 13 2026, compaction-penalty ratio) is a distinct mathematical object from meter's `L(t)` (subscription-leverage multiplier, originally also called `M(t)` in our 2026-05-01 newsletter — renamed to `L(t)` after the M-symbol collision surfaced). Same letter, different concepts; we use distinct designators in joint discussions.
 
 ## Support
 
