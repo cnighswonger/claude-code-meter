@@ -26,7 +26,7 @@ const { values, positionals } = parseArgs({
     share: { type: "boolean" },
     fit: { type: "boolean" },
     "log-file": { type: "string" },
-    // analyze: by-plan M(t) split
+    // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
     "per-session": { type: "boolean" },
     "burn-intensity": { type: "boolean" },
@@ -66,9 +66,9 @@ Options:
   --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
 
   analyze-only flags:
-  --by-plan           Per-tier amortized M(t) (cost / (sub_price * calendar_days))
+  --by-plan           Per-tier amortized L(t) (cost / (sub_price * calendar_days))
   --per-session       Per-session "sub-days consumed" (cost / sub_daily_price)
-  --burn-intensity    Per-tier burn rate over session span (diagnostic, not M(t))
+  --burn-intensity    Per-tier burn rate over session span (diagnostic, not L(t))
   --plan-transitions <spec>     "YYYY-MM-DD=tier,YYYY-MM-DD=tier" for mid-window plan changes
   --list-price-override <spec>  "tier=N.NN,..." override list-price defaults
 

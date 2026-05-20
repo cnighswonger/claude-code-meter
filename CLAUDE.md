@@ -59,6 +59,29 @@ These are non-negotiable design constraints, not suggestions:
 3. **Inspect before send.** The `share` command always displays the exact JSON payload and requires explicit confirmation before transmission.
 4. **Integrity verification.** The interceptor hashes its own source on load and warns if modified since install. The `__INTEGRITY_HASH__` placeholder is replaced at npm publish time.
 5. **npm provenance.** Publish with `--provenance` for Sigstore attestation linking the package to its source commit.
+6. **No origin-server secrets in tracked files.** See "Public-Repo Information Hygiene" below.
+
+## Public-Repo Information Hygiene
+
+This repository is public. Anything committed becomes part of public git history immediately and cannot be retracted by editing or deleting the file later. Before any commit, scan for origin-server-identifying information and replace it with placeholders + a pointer to internal deployment notes.
+
+**Never put in tracked files:**
+
+- **Origin IPs** — literal IPv4/IPv6 addresses pointing at production hosts (droplets, load balancers, VPS, etc.)
+- **SSH targets** — `ssh root@<ip>` lines, hostname-port pairs that reach origin
+- **Internal service ports** that aren't surfaced through the public reverse-proxy / CDN
+- **Stack fingerprinting** — server hostnames combined with "what's running" details (e.g. `vsits-meter-01, Node 20 + Caddy + systemd, port 3847`). Fingerprinting narrows the attack surface even after an IP rotation.
+
+**Why this is non-negotiable:** Cloudflare's WAF / DDoS protection only protects traffic that actually flows through Cloudflare. If the origin IP is in a public repo, an attacker can bypass Cloudflare entirely and hit the origin directly. The remediation path for an IP that has already been leaked to git history is rotating the IP itself (snapshot + recreate, or floating-IP reassignment) — there is no in-place "scrub" because git history is immutable.
+
+**Acceptable patterns in public docs and runbooks:**
+
+- `<droplet>` or `<DROPLET_IP>` placeholder in place of literal IPs
+- `ssh root@<droplet>` rather than the literal `ssh root@<numeric-ip>` form
+- One-line pointer: "(host details in internal deployment notes — see `SESSION_STATE.md` on the operator's local checkout)" or similar. Keeps the runbook useful for someone with proper access without leaking the value.
+- Generic deployment shape descriptions are fine: "single DigitalOcean droplet behind Cloudflare-proxied DNS" gives readers the shape without enabling bypass.
+
+**Scope:** This applies to ALL tracked files: source code, comments, `README.md`, `CHANGELOG.md`, `SESSION_STATE.md`, handoff docs under `docs/`, commit messages, PR descriptions, issue comments. Scan for literal IPs (v4/v6), SSH lines, and hostname-port-stack tuples before any `git commit`, `git push`, or `gh` write operation.
 
 ## Architecture Decisions
 

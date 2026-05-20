@@ -96,27 +96,27 @@ function parseListPriceOverrides(spec) {
 }
 
 /**
- * Compute M(t) = effective_cost_per_day / list_price_per_day, plus the
+ * Compute L(t) = effective_cost_per_day / list_price_per_day, plus the
  * supporting numbers, for a given subset of rows at a given plan tier.
  *
  * `effective_cost_per_day` derives from the API-equivalent cost (what these
  * tokens would cost at retail Anthropic pricing) divided by the elapsed
- * days the rows span. M(t) > 1 means subscription value exceeds list price
- * at this usage level; M(t) < 1 means the user is paying for capacity they
+ * days the rows span. L(t) > 1 means subscription value exceeds list price
+ * at this usage level; L(t) < 1 means the user is paying for capacity they
  * don't consume. Both are interesting; both are public-info-derivable.
  *
  * Returns null if list price is null (api / unknown tiers) or insufficient
  * data to compute.
  */
 /**
- * Compute the amortized cost multiplier M(t) for a set of rows.
+ * Compute the amortized subscription-leverage multiplier L(t) for a set of rows.
  *
  * Methodology (the presupposition we publish under):
- *   M(t) = sum(api_equivalent_cost) / (subscription_daily_price * calendar_days_in_window)
+ *   L(t) = sum(api_equivalent_cost) / (subscription_daily_price * calendar_days_in_window)
  *
  * The denominator is calendar days, not active-session time. A subscription
  * is paying for every day of the window whether you used it or not, so the
- * idle days count too. This biases M(t) DOWN for sporadic users (good — it
+ * idle days count too. This biases L(t) DOWN for sporadic users (good — it
  * tells them honestly that they aren't extracting much from the sub) and
  * gives heavy users no false credit for short bursts.
  *
@@ -160,7 +160,7 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
     calendar_days: calendarDays,
     sub_window_cost: +subWindowCost.toFixed(4),
     effective_cost_per_day: +effectivePerDay.toFixed(4),
-    multiplier_M_t: +multiplier.toFixed(4),
+    multiplier_L_t: +multiplier.toFixed(4),
     n_calls: rows.length,
     api_equivalent_total: +cost.total_api_cost.toFixed(4),
     methodology: "amortized_calendar_days",
@@ -170,8 +170,8 @@ function computePlanMultiplier(rows, planTier, listPriceOverrides) {
 /**
  * Burn-intensity variant — the OLD per-span formula, kept as an opt-in
  * diagnostic. Tells you "if this session's burn rate were sustained for
- * 24 hours, what M(t) would that imply?" Useful for ranking sessions by
- * intensity; misleading when reported as a standalone M(t) because short
+ * 24 hours, what L(t) would that imply?" Useful for ranking sessions by
+ * intensity; misleading when reported as a standalone L(t) because short
  * sessions extrapolate wildly above sustainable rates.
  */
 function computeBurnIntensity(rows, planTier, listPriceOverrides) {
@@ -202,7 +202,7 @@ function computeBurnIntensity(rows, planTier, listPriceOverrides) {
     n_calls: rows.length,
     api_equivalent_total: +cost.total_api_cost.toFixed(4),
     methodology: "session_span_extrapolated",
-    caveat: "Sub-day sessions extrapolate above sustainable rates; do not interpret as M(t)",
+    caveat: "Sub-day sessions extrapolate above sustainable rates; do not interpret as L(t)",
   };
 }
 
@@ -582,7 +582,7 @@ export async function analyzeCommand(args) {
   const nRejected = rows.filter((r) => r.qstatus === "rejected").length;
   const nDrainEvents = rows.filter((r) => (r.q5h || 0) >= 1.0).length;
 
-  // Per-plan M(t) split, if requested.
+  // Per-plan L(t) split, if requested.
   // --by-plan enables the section
   // --plan-transitions "YYYY-MM-DD=tier,..." attributes each row to a tier
   //   based on its timestamp; rows without a transition match are bucketed
@@ -606,7 +606,7 @@ export async function analyzeCommand(args) {
       byPlan[tier] = mt || {
         plan_tier: tier,
         list_price_per_day: null,
-        note: "M(t) not computed — list price is null for this tier (api / unknown / unconfigured)",
+        note: "L(t) not computed — list price is null for this tier (api / unknown / unconfigured)",
         n_calls: tierRows.length,
       };
     }
@@ -642,7 +642,7 @@ export async function analyzeCommand(args) {
 
   // Burn intensity (opt-in diagnostic). Old --by-plan formula, kept as
   // a separate output to inspect session-level burn rates without
-  // confusing them with the amortized M(t) report.
+  // confusing them with the amortized L(t) report.
   let burnIntensity = null;
   if (args["burn-intensity"]) {
     const transitions = parsePlanTransitions(args["plan-transitions"]);

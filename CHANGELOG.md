@@ -1,5 +1,7 @@
 # Changelog
 
+> **Designator rename (2026-05-20):** The metric documented as `M(t)` in v0.6.x and earlier has been renamed to `L(t)` — "subscription-leverage multiplier" — after the M-symbol collided with @fgrosswig's `M_real` (`fgrosswig/claude-usage-dashboard`, a distinct compaction-penalty ratio). The formula, units, and reporting behavior are unchanged; only the designator differs. The historical entries below preserve the original `M(t)` name so the v0.6.x release record stays faithful to what shipped at the time. New code and docs use `L(t)`.
+
 ## 0.6.1 (2026-05-05)
 
 **Documentation: M_real attribution to `fgrosswig/claude-usage-dashboard`** (closes [#10](https://github.com/cnighswonger/claude-code-meter/issues/10)).
