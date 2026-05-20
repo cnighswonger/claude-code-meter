@@ -1,8 +1,9 @@
 // web/vite.config.mjs
 //
-// Builds the dashboard into ../public/ so it lands alongside the existing
-// public/analysis.html and public/vendor/. emptyOutDir: false ensures the
-// build does not wipe those existing files.
+// Multi-page build: dashboard (/) and Deep Analysis (/analysis.html).
+// Builds into ../public/ so the output lands alongside the existing
+// public/vendor/. emptyOutDir: false ensures the build does not wipe
+// any pre-existing files in public/.
 //
 // In dev (npm run dev), /api/v1/* is proxied to the production droplet so
 // charts render with real data. No staging env exists; treat the dev server
@@ -10,6 +11,7 @@
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
 
 export default defineConfig({
   plugins: [react()],
@@ -21,6 +23,10 @@ export default defineConfig({
     assetsDir: "assets",
     sourcemap: false,
     rollupOptions: {
+      input: {
+        index:    resolve(__dirname, "index.html"),
+        analysis: resolve(__dirname, "analysis.html"),
+      },
       output: {
         entryFileNames: "assets/[name]-[hash].js",
         chunkFileNames: "assets/[name]-[hash].js",

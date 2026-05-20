@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useState } from "react";
 // full echarts package — we register only the components we actually use.
 import ReactECharts from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
-import { BarChart, GaugeChart } from "echarts/charts";
+import { BarChart, GaugeChart, LineChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
@@ -25,9 +25,12 @@ import { CanvasRenderer } from "echarts/renderers";
 
 // Register only the components we use. Keeps the bundle below the prior
 // Highcharts footprint by tree-shaking everything we don't need.
+// LineChart is needed by analysis-charts.jsx (CacheSensitivityChart area +
+// HypothesisRangeChart smoothed-line).
 echarts.use([
   BarChart,
   GaugeChart,
+  LineChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
