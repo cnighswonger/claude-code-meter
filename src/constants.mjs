@@ -68,7 +68,7 @@ export const PLAN_LIST_PRICE_PER_DAY = {
   "max-20x": 6.667,     // $200/mo (20x Pro multiplier)
   // Some installations may use the older single-tier "max" name; treat as max-5x.
   "max": 3.333,
-  // API users have no flat-rate; M(t) is undefined for them.
+  // API users have no flat-rate; L(t) is undefined for them.
   "api": null,
   "unknown": null,
 };
