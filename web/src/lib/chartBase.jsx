@@ -13,14 +13,12 @@ import React, { useEffect, useRef, useState } from "react";
 // full echarts package — we register only the components we actually use.
 import ReactECharts from "echarts-for-react/lib/core";
 import * as echarts from "echarts/core";
-import { BarChart, GaugeChart, CustomChart } from "echarts/charts";
+import { BarChart, GaugeChart } from "echarts/charts";
 import {
   GridComponent,
   TooltipComponent,
   LegendComponent,
   MarkLineComponent,
-  MarkPointComponent,
-  TitleComponent,
   AriaComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
@@ -30,13 +28,10 @@ import { CanvasRenderer } from "echarts/renderers";
 echarts.use([
   BarChart,
   GaugeChart,
-  CustomChart,
   GridComponent,
   TooltipComponent,
   LegendComponent,
   MarkLineComponent,
-  MarkPointComponent,
-  TitleComponent,
   AriaComponent,
   CanvasRenderer,
 ]);

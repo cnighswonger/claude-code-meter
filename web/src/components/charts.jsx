@@ -372,6 +372,11 @@ export function Opus47Chart({ metrics }) {
               formatter: (p) => Number(p.value).toFixed(1) + "×",
             },
             data: [1.0, 1.0, 1.0],
+            markLine: {
+              symbol: "none", silent: true,
+              lineStyle: { color: t.hairStr, type: "dashed", width: 1 },
+              data: [{ yAxis: 1.0 }],
+            },
           },
           {
             name: "opus-4-7",
@@ -389,11 +394,6 @@ export function Opus47Chart({ metrics }) {
             data: [a.burnMultiplier, a.apiCostMultiplier, a.toolCallMultiplier],
           },
         ],
-        markLine: {
-          symbol: "none", silent: true,
-          lineStyle: { color: t.hairStr, type: "dashed", width: 1 },
-          data: [{ yAxis: 1.0 }],
-        },
       })}
     />
   );
@@ -597,7 +597,8 @@ export function SavingsWaterfall({ metrics }) {
               if (idx == null) return "";
               const s = computed[idx];
               if (s.sum) {
-                return `${s.name}<br/><b style="font-family:${base._fonts.fMono};">$${Math.abs(s.total).toLocaleString()}</b>`;
+                const sign = s.total < 0 ? "-" : "";
+                return `${s.name}<br/><b style="font-family:${base._fonts.fMono};">${sign}$${Math.abs(s.total).toLocaleString()}</b>`;
               }
               return `${s.name}<br/><b style="font-family:${base._fonts.fMono};">${s.value < 0 ? "-" : ""}$${Math.abs(s.value).toLocaleString()}</b>`;
             },
@@ -626,7 +627,10 @@ export function SavingsWaterfall({ metrics }) {
                 color: t.ink, fontFamily: '"JetBrains Mono", monospace', fontSize: 11.5, fontWeight: 500,
                 formatter: (p) => {
                   const s = computed[p.dataIndex];
-                  if (s.sum) return "$" + Math.abs(s.total).toLocaleString();
+                  if (s.sum) {
+                    const sign = s.total < 0 ? "-" : "";
+                    return sign + "$" + Math.abs(s.total).toLocaleString();
+                  }
                   return (s.value < 0 ? "-$" : "+$") + Math.abs(s.value).toLocaleString();
                 },
               },
