@@ -1,17 +1,40 @@
 // web/src/lib/chartBase.jsx
 //
-// Highcharts setup, theming, and the shared <Chart> wrapper component.
+// Apache ECharts setup, theming, and the shared <Chart> wrapper component.
 // Every chart in components/charts.jsx mounts through here.
 //
-// To swap charting libraries (e.g. Highcharts → ECharts), this file is the
-// only one that touches the chart library directly. See LICENSING.md
-// Option C for the swap path.
+// History: this layer was previously a Highcharts wrapper. Migrated to
+// Apache ECharts (Apache-2.0) per LICENSING.md — Highcharts EULA §1.2/§1.4
+// excludes commercial-entity-operated public sites from the Personal Use
+// scope, and the meter site is operated by a commercial entity.
 
 import React, { useEffect, useRef, useState } from "react";
-import Highcharts from "highcharts";
-import "highcharts/highcharts-more";       // waterfall, paired column
-import "highcharts/modules/solid-gauge";   // cache gauge
-import "highcharts/modules/accessibility"; // a11y descriptions for charts
+// Use the /lib/core entry point so the React wrapper doesn't pull in the
+// full echarts package — we register only the components we actually use.
+import ReactECharts from "echarts-for-react/lib/core";
+import * as echarts from "echarts/core";
+import { BarChart, GaugeChart } from "echarts/charts";
+import {
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+  AriaComponent,
+} from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
+
+// Register only the components we use. Keeps the bundle below the prior
+// Highcharts footprint by tree-shaking everything we don't need.
+echarts.use([
+  BarChart,
+  GaugeChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  MarkLineComponent,
+  AriaComponent,
+  CanvasRenderer,
+]);
 
 // ─── Theme helpers ─────────────────────────────────────────────────────────
 
@@ -47,91 +70,94 @@ export function getTheme() {
   };
 }
 
+// baseOptions returns an ECharts option skeleton with theme-aware defaults.
+// Each chart in components/charts.jsx spreads this and overrides what it needs.
 export function baseOptions(theme) {
   const fMono = '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace';
   const fSans = '"Geist", ui-sans-serif, system-ui, sans-serif';
 
   return {
-    chart: {
-      backgroundColor: "transparent",
-      style: { fontFamily: fSans, color: theme.ink },
-      animation: { duration: 800 },
-      spacing: [10, 4, 14, 4],
-    },
-    colors: [theme.info, theme.val, theme.warn, theme.bad, theme.accent, theme.ink2],
-    title:    { text: undefined },
-    subtitle: { text: undefined },
-    credits:  { enabled: false },
-    legend: {
-      itemStyle: { color: theme.ink2, fontFamily: fMono, fontSize: "11px", fontWeight: "400" },
-      itemHoverStyle: { color: theme.ink },
-      itemHiddenStyle: { color: theme.muted },
-      symbolHeight: 8, symbolWidth: 8, symbolRadius: 2,
-    },
-    xAxis: {
-      lineColor: theme.hair,
-      tickColor: theme.hair,
-      gridLineColor: theme.hair,
-      labels: { style: { color: theme.muted, fontFamily: fMono, fontSize: "10.5px" } },
-      title:  { style: { color: theme.muted, fontFamily: fMono, fontSize: "10.5px",
-                         letterSpacing: "0.06em", textTransform: "uppercase" } },
-    },
-    yAxis: {
-      lineColor: theme.hair,
-      tickColor: theme.hair,
-      gridLineColor: theme.hair,
-      gridLineDashStyle: "Dash",
-      labels: { style: { color: theme.muted, fontFamily: fMono, fontSize: "10.5px" } },
-      title:  { style: { color: theme.muted, fontFamily: fMono, fontSize: "10.5px",
-                         letterSpacing: "0.06em", textTransform: "uppercase" } },
-    },
+    backgroundColor: "transparent",
+    color: [theme.info, theme.val, theme.warn, theme.bad, theme.accent, theme.ink2],
+    textStyle: { fontFamily: fSans, color: theme.ink },
+    animation: true,
+    animationDuration: 800,
+    grid: { left: 4, right: 4, top: 10, bottom: 14, containLabel: true },
     tooltip: {
-      useHTML: true,
+      trigger: "item",
       backgroundColor: theme.panel,
       borderColor: theme.hairStr,
-      borderRadius: 8,
       borderWidth: 1,
-      shadow: false,
+      borderRadius: 8,
       padding: 10,
-      style: { color: theme.ink, fontFamily: fSans, fontSize: "12.5px" },
-      headerFormat:
-        `<div style="font-family:${fMono};font-size:10px;letter-spacing:.08em;` +
-        `color:${theme.muted};text-transform:uppercase;margin-bottom:4px;">{point.key}</div>`,
-      pointFormat:
-        `<span style="color:{point.color};">●</span> <b>{series.name}</b>: ` +
-        `<span style="font-family:${fMono};">{point.y}</span>`,
+      textStyle: { color: theme.ink, fontFamily: fSans, fontSize: 12.5 },
+      extraCssText: "box-shadow:none;",
     },
-    plotOptions: {
-      series: {
-        animation: { duration: 900 },
-        states: {
-          hover:    { brightness: 0.1, halo: { size: 6, opacity: 0.18 } },
-          inactive: { opacity: 0.35 },
-        },
-        dataLabels: {
-          style: { color: theme.ink, fontFamily: fMono, fontSize: "11px",
-                   textOutline: "none", fontWeight: "500" },
-        },
-        marker: { lineWidth: 0 },
+    legend: {
+      show: false,
+      textStyle: { color: theme.ink2, fontFamily: fMono, fontSize: 11, fontWeight: "normal" },
+      icon: "roundRect",
+      itemWidth: 8,
+      itemHeight: 8,
+    },
+    xAxis: {
+      type: "category",
+      axisLine: { lineStyle: { color: theme.hair } },
+      axisTick: { lineStyle: { color: theme.hair } },
+      splitLine: { show: false, lineStyle: { color: theme.hair } },
+      axisLabel: {
+        color: theme.muted,
+        fontFamily: fMono,
+        fontSize: 10.5,
       },
-      column: { borderWidth: 0, borderRadius: 4, groupPadding: 0.1, pointPadding: 0.04 },
-      bar:    { borderWidth: 0, borderRadius: 4, groupPadding: 0.1, pointPadding: 0.04 },
+      nameTextStyle: {
+        color: theme.muted, fontFamily: fMono, fontSize: 10.5,
+      },
     },
-    accessibility: { enabled: true },
+    yAxis: {
+      type: "value",
+      axisLine: { show: false, lineStyle: { color: theme.hair } },
+      axisTick: { show: false, lineStyle: { color: theme.hair } },
+      splitLine: {
+        show: true,
+        lineStyle: { color: theme.hair, type: "dashed" },
+      },
+      axisLabel: {
+        color: theme.muted,
+        fontFamily: fMono,
+        fontSize: 10.5,
+      },
+      nameTextStyle: {
+        color: theme.muted, fontFamily: fMono, fontSize: 10.5,
+      },
+    },
+    aria: { enabled: true },
+    // Fonts captured here so charts can pull them in formatters / rich labels.
+    _fonts: { fMono, fSans },
   };
 }
 
+// ─── Gradient helpers (ECharts gradient object form) ───────────────────────
+
 export function gradient(top, bottom) {
   return {
-    linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
-    stops: [[0, top], [1, bottom]],
+    type: "linear",
+    x: 0, y: 0, x2: 0, y2: 1,
+    colorStops: [
+      { offset: 0, color: top },
+      { offset: 1, color: bottom },
+    ],
   };
 }
 
 export function gradientH(left, right) {
   return {
-    linearGradient: { x1: 0, y1: 0, x2: 1, y2: 0 },
-    stops: [[0, left], [1, right]],
+    type: "linear",
+    x: 0, y: 0, x2: 1, y2: 0,
+    colorStops: [
+      { offset: 0, color: left },
+      { offset: 1, color: right },
+    ],
   };
 }
 
@@ -143,9 +169,9 @@ export function Chart({ build, deps = [], height = 320, className = "" }) {
   const ref = useRef(null);
   const [tick, setTick] = useState(0);
 
-  // Re-render on theme/accent change. The Counter/theme system uses CSS
-  // variable swaps; an attribute change on <body> or <html style> triggers
-  // this remount so Highcharts picks up the new palette.
+  // Re-render on theme/accent change. The theme system uses CSS variable
+  // swaps; an attribute change on <body> or <html style> triggers this
+  // remount so ECharts picks up the new palette.
   useEffect(() => {
     const obs = new MutationObserver(() => setTick((t) => t + 1));
     obs.observe(document.body, { attributes: true, attributeFilter: ["class"] });
@@ -153,26 +179,53 @@ export function Chart({ build, deps = [], height = 320, className = "" }) {
     return () => obs.disconnect();
   }, []);
 
-  useEffect(() => {
-    if (!ref.current) return;
+  let option;
+  let buildError = null;
+  try {
     const theme = getTheme();
-    let chart;
-    try {
-      const opts = build(theme, baseOptions(theme));
-      chart = Highcharts.chart(ref.current, opts);
-    } catch (err) {
-      console.error("[Chart] failed to render:", err);
-      if (ref.current) {
-        ref.current.innerHTML =
-          `<div style="display:flex;align-items:center;justify-content:center;` +
-          `height:100%;color:var(--muted);font-family:var(--f-mono);font-size:12px;` +
-          `text-align:center;padding:24px;">Chart failed to render.<br/>` +
-          `<span style="color:var(--bad);">${String(err.message || err)}</span></div>`;
-      }
-    }
-    return () => { try { chart && chart.destroy(); } catch { /* noop */ } };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tick, ...deps]);
+    option = build(theme, baseOptions(theme));
+  } catch (err) {
+    buildError = err;
+    console.error("[Chart] failed to build option:", err);
+  }
 
-  return <div ref={ref} className={className} style={{ height, width: "100%" }} />;
+  if (buildError) {
+    return (
+      <div
+        ref={ref}
+        className={className}
+        style={{
+          height,
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "var(--muted)",
+          fontFamily: "var(--f-mono)",
+          fontSize: 12,
+          textAlign: "center",
+          padding: 24,
+        }}
+      >
+        Chart failed to render.
+        <br />
+        <span style={{ color: "var(--bad)" }}>{String(buildError.message || buildError)}</span>
+      </div>
+    );
+  }
+
+  return (
+    <ReactECharts
+      // Forcing a fresh instance on theme tick avoids stale palette colors.
+      key={tick}
+      ref={ref}
+      option={option}
+      echarts={echarts}
+      notMerge={true}
+      lazyUpdate={false}
+      className={className}
+      style={{ height, width: "100%" }}
+      opts={{ renderer: "canvas" }}
+    />
+  );
 }

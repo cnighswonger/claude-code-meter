@@ -2,7 +2,7 @@
   "name": "claude-code-meter-web",
   "private": true,
   "version": "0.1.0",
-  "description": "Dashboard front-end for meter.vsits.co — Vite + React + Highcharts",
+  "description": "Dashboard front-end for meter.vsits.co — Vite + React + Apache ECharts",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -11,7 +11,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "highcharts": "^11.4.8",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

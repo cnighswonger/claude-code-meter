@@ -1,153 +1,208 @@
-# Highcharts licensing — decision required before deploy
+# Highcharts licensing — analysis, decision, and remediation
 
-The current `meter.vsits.co` site uses Highcharts. So does this redesign. This
-is fine if usage stays under Highcharts' non-commercial / personal license. It
-becomes a problem if the site is treated as commercial.
+This file records the licensing analysis for `meter.vsits.co`'s use of
+Highcharts, the operational decision that came out of it, and the
+remediation taken on 2026-05-20. Every legal/factual claim is cited
+against a primary source.
 
-This file exists so the deployer is forced to make the call before the redesign
-ships.
+> **Important disclaimer (read first).** This is not legal advice. The
+> author is not a lawyer. This file summarizes the operator's good-faith
+> reading of the primary sources cited below, retrieved on the dates
+> noted. Source documents are revised by their owners over time and may
+> have changed since retrieval. Anyone relying on this analysis for a
+> commercial decision should re-read the cited sources themselves and,
+> for any non-trivial deployment, consult counsel.
 
 ---
 
-## The terms
+## What the Highcharts terms actually say
 
-Highcharts is dual-licensed:
+Retrieved 2026-05-20 from <https://shop.highcharts.com/license-eula>:
 
-- **Free** for non-commercial use, evaluation, personal projects, schoolwork,
-  non-profits. The free terms allow you to ship the JS files, do not require
-  a watermark, and do not require attribution at runtime.
-- **Paid** for commercial use. Includes a per-developer / per-server license
-  key. Without a commercial license, "commercial use" is not permitted under
-  the terms — even if the code itself loads identically and shows no warning.
+- **§ 1.2 "Personal Use"** is defined as *"use of the Software by a natural
+  person for purposes that are entirely non-commercial, non-professional,
+  and for personal enjoyment or self-education."* The definition
+  explicitly excludes business, trade, profession, government, non-profit,
+  freelance work, and side-hustles.
+- **§ 1.3 "Educational Use"** is limited to members of a Qualified
+  Educational Institution for activities directly related to that
+  institution's formal instructional programs (classroom instruction,
+  student coursework).
+- **§ 1.4 "Commercial Use"** is defined as *"any use of the Software for
+  purposes of direct or indirect commercial advantage or financial gain."*
+  Encompasses for-profit companies, non-profits, government entities,
+  freelance services, and internal business contexts including R&D.
 
-The line between non-commercial and commercial is **operator intent, not the
-technical implementation**. A dashboard hosted at a company's vanity domain,
-promoted in marketing material, linked from a corporate site, or sold as a
-product — these are commercial uses, regardless of whether the dashboard
-itself is paywalled or whether the company is currently profitable.
+Retrieved 2026-05-20 from <https://shop.highcharts.com/license>
+(Standard License Agreement):
+
+- Public-website clause: *"any use of the Licensed Software in connection
+  with a publicly accessible website or webpage made available to users
+  outside of the Licensees organization (Public Websites) shall be deemed
+  use in an External Application and will require a SaaS License."*
+
+Retrieved 2026-05-20 from <https://shop.highcharts.com/> (pricing):
+
+- **Internal License** — $185 per seat annually. The page states it
+  authorizes internal applications and private websites only — not
+  Public Websites.
+- **SaaS License** — $366 per seat annually. The page states it grants
+  rights to one External Application plus internal use.
+- **OEM License** — perpetual, price by quote.
+
+This file makes no claim about Highcharts' attribution/credits behavior:
+the EULA does not address whether the `credits.enabled = false` API
+setting is permitted under any license tier, and the operator did not
+locate an authoritative primary source on this point during the
+2026-05-20 review. The Standard License's "Public Websites" clause is
+the load-bearing constraint here.
 
 ---
 
 ## What we know about `meter.vsits.co`
 
-From the deployment memo:
+From the deployment memo and SESSION_STATE.md (verifiable in this repo):
 
-- Operated by Veritas Supera IT Solutions LLC (a company).
-- Linked from `vsits.co` (the company's marketing site).
-- The companion npm packages (`claude-code-meter`, `claude-code-cache-fix`) are
-  free / MIT, but they support the company's broader product offering.
-- The site is currently small in audience and the maintainer notes "no
-  watermark visible because we're below the dashboard threshold." This is a
-  technical observation, not a legal defense — Highcharts' terms turn on
-  use type, not visibility.
+- Operated by Veritas Supera IT Solutions LLC (a commercial entity).
+- Publicly accessible website at `https://meter.vsits.co/`.
+- Companion npm packages (`claude-code-meter`, `claude-code-cache-fix`)
+  are MIT-licensed. The site exists to demonstrate the methodology those
+  packages use; it is not directly revenue-generating.
 
-A conservative reading of the Highcharts terms suggests `meter.vsits.co`
-should be treated as commercial. A more permissive reading — that it's
-community open-data research with no paid product — is defensible but is the
-operator's call to make, not the design agent's.
+Mapping these against the cited EULA:
 
-**This is not legal advice.** A 5-minute read of <https://shop.highcharts.com/eula>
-by someone with authority to commit the company is the right path.
+- Operator type — Veritas Supera IT Solutions LLC is a for-profit
+  company. Under § 1.4, this places the use within "Commercial Use"
+  regardless of whether the specific site is revenue-generating
+  (the definition includes "indirect commercial advantage" and lists
+  internal R&D explicitly).
+- Use type — publicly accessible website serving users outside the
+  Licensee's organization. Per the Standard License, this is an
+  "External Application" requiring a SaaS License.
+- Personal Use does not apply: § 1.2 is limited to a natural person.
+- Educational Use does not apply: § 1.3 is limited to qualified
+  educational institutions.
 
----
-
-## Three options
-
-Pick one before deploying.
-
-### Option A — Buy a commercial Highcharts license
-
-Highcharts commercial licenses start around USD ~535/developer/year and
-scale up for SaaS / multi-server deployments. `meter.vsits.co` is a single
-server with a single deploying developer, so the entry tier is the relevant
-price.
-
-- **Cost:** ~$535/yr (single OEM) up to a few thousand for SaaS terms.
-- **Code change:** Add the license key. In `web/src/lib/chartBase.jsx`,
-  before any `Highcharts.chart(...)` call:
-  ```js
-  Highcharts.setOptions({ credits: { enabled: false } });
-  // License key configured via Highcharts.setLicenseKey() — see Highcharts docs.
-  ```
-- **Pros:** Zero code rework. Highcharts is mature, has every chart type the
-  redesign uses (waterfall, solid-gauge, paired column), great accessibility
-  module, well-documented API.
-- **Cons:** Real recurring cost; the only reason to pay if Highcharts has
-  something the free alternatives don't.
-
-### Option B — Treat the site as non-commercial and keep Highcharts free
-
-Maintain that `meter.vsits.co` is community research, not a product. Keep
-the redesign as shipped.
-
-- **Cost:** $0.
-- **Code change:** None — already configured this way.
-- **Pros:** No friction; matches the current live site's stance.
-- **Cons:** Increasingly tenuous as the site grows or the company markets
-  around it. If Highcharts ever audits, the operator is exposed. Be prepared
-  to switch quickly if challenged.
-
-### Option C — Swap to ECharts (Apache 2.0) or Observable Plot (ISC)
-
-Replace Highcharts with a permissively-licensed alternative. No license,
-no audit risk, free forever.
-
-**ECharts (Apache 2.0).** Closest feature parity to Highcharts. Has
-waterfall (`series.type: 'custom'` + render function — a bit fiddly),
-solid-gauge equivalent (`series.type: 'gauge'` with custom styling), paired
-columns, annotations. Bundle size comparable to Highcharts.
-
-**Observable Plot (ISC).** More declarative, friendlier to React, smaller
-bundle. But: no waterfall out of the box, no solid-gauge. Either build them
-manually or accept different visuals.
-
-- **Cost:** Engineering time. Estimate: half a day to swap Highcharts for
-  ECharts on this dashboard. A full day for Plot if you want to redesign
-  the gauge/waterfall to fit Plot's idioms.
-- **Code change:** Swap `Highcharts.chart(...)` calls for `echarts.init(...)
-  + .setOption(...)` (or `Plot.plot(...)` for Plot). The `Chart` wrapper in
-  `web/src/lib/chartBase.jsx` is the only file with library-specific code —
-  everything else passes options through it. Replacing this one file does
-  90% of the swap.
-- **Pros:** No license risk. Library is free forever. ECharts is well
-  maintained, Chinese-led but with strong English docs.
-- **Cons:** Some chart types will look slightly different. The waterfall
-  specifically needs the most work — ECharts' approach is less idiomatic
-  than Highcharts'. Plot doesn't have one at all.
+The operator's good-faith reading is that a commercial license — the
+SaaS tier at $366/seat/yr per the 2026-05-20 pricing — would be the
+defensible path for continued Highcharts use on this site. Continuing
+on the free tier as "community research" is not supportable under
+the EULA as written.
 
 ---
 
-## Recommendation
+## Three options that were on the table
 
-If `meter.vsits.co` is a community research surface and you want zero ambiguity:
-**Option C with ECharts.** It's a half-day of work and removes the question
-entirely.
+### Option A — Buy a Highcharts SaaS License
 
-If you're certain the site will stay personal-scale and Highcharts feels worth
-the slight legal greyness: **Option B.** Document the decision internally so
-future-you knows what was decided.
+- **Cost:** $366 per seat per year (2026-05-20 pricing). Subject to
+  change by Highsoft.
+- **Code change:** Configure the license key per Highsoft's
+  documentation. (The exact API call is not asserted here; consult
+  Highsoft's docs current at the time of purchase.)
+- **Pros:** Zero re-architecture. Highcharts is mature, has every
+  chart type the redesign uses (waterfall, gauge, paired column),
+  and the operator has years of contribution history with the project.
+- **Cons:** Real recurring cost. License is per-seat per-year, not
+  perpetual.
 
-If money is no object and you want to keep the current build verbatim:
-**Option A.** Cleanest path, just buy the license.
+### Option B — Argue non-commercial use, stay on the free terms
+
+This was the operator's 2026-05-17 decision, made on a less-careful
+reading of the EULA. The 2026-05-20 re-read above made clear this
+option is not supportable: § 1.2 limits Personal Use to natural
+persons, and § 1.4 places any commercial-entity operator under
+Commercial Use, so the "non-commercial" framing does not survive
+contact with the actual EULA text.
+
+This option is documented here for transparency about the prior
+decision path; it is not a path forward.
+
+### Option C — Swap Highcharts for a permissively-licensed alternative
+
+Replace Highcharts with a library whose published license permits use
+in the deployment without further licensing decisions.
+
+**Apache ECharts.** License verified as Apache-2.0 via the npm registry
+(`https://registry.npmjs.org/echarts/latest` → `.license` field returns
+`"Apache-2.0"`, retrieved 2026-05-20). Config-driven option API similar
+in shape to Highcharts. Native `gauge` series with `progress: { show: true }`
+covers the solid-gauge use case. Waterfall is not a native series type;
+the Apache ECharts Handbook documents a stacked-bar pattern with a
+transparent placeholder series at
+<https://echarts.apache.org/handbook/en/how-to/chart-types/bar/waterfall/>.
+Accessibility support exists via the `aria` configuration option but is
+less mature than Highcharts' a11y module — soft regression vs the
+redesign's original a11y goal.
+
+**Observable Plot.** License verified as ISC via the npm registry
+(`https://registry.npmjs.org/@observablehq%2Fplot/latest` → `.license`
+field returns `"ISC"`, retrieved 2026-05-20). More declarative,
+smaller bundle. No native waterfall or gauge — would require building
+both manually. Bigger porting effort than ECharts for this dashboard's
+chart mix.
+
+**Plotly.js.** License is MIT per the npm registry. Has native
+`waterfall` trace and `indicator`-based gauge. Bundle is significantly
+larger than the Highcharts baseline. Different mental model from
+Highcharts (traces + layout), so more re-learning per chart.
 
 ---
 
 ## Decision log
 
-> Fill in below before deploying.
+### 2026-05-17 — Option B (provisional, later corrected)
 
-- [ ] Option A — Highcharts commercial license. License key: `__________`
-- [x] Option B — Highcharts free / non-commercial. Risk accepted by: `cnighswonger (operator)` on `2026-05-17`.
-- [ ] Option C — Swap to ECharts / Plot. Implemented in commit: `__________`
+Operator initially selected Option B based on a reading of the
+Highcharts EULA that emphasized non-commercial / personal-use scope.
+Rationale recorded at the time: `meter.vsits.co` is open-source,
+non-revenue-generating community research; operator's reading was that
+this falls inside Highcharts' non-commercial / personal-use terms.
 
-**Rationale (2026-05-17):** `meter.vsits.co` is open-source, non-revenue-generating community research. Operator's reading: this falls inside Highcharts' non-commercial / personal-use terms. Revisit if the site's posture shifts (revenue, paywall, embedded in a commercial product, etc.).
+### 2026-05-17 — Hardening pass (added the same day)
 
-**Hardening pass (2026-05-17, post-decision):** A consult with the Highcharts GPT noted that the non-commercial allowance applies when the project is "strictly non-commercial and you are not charging for access or distribution" — and that a commercial license is required if the project is "intended for distribution or commercial gain." To weaken any "this is a corporate product surface" reading and tighten the non-commercial posture, all outbound hyperlinks from the meter site and its repo back to the `vsits.co` marketing website were removed:
+Concerns about whether the non-commercial reading would survive scrutiny
+led to a hardening pass: all outbound hyperlinks from the meter site
+and its repo back to the `vsits.co` marketing site were removed
+(`public/index.html`, `public/analysis.html`, `README.md`,
+`package.json` author URL — committed as `ff6bcdd` on the PR #19
+branch). The redesign's React tree already rendered "VSITS" and
+"Veritas Supera IT Solutions" as plain text with no hyperlinks.
+`meter.vsits.co` hostname references (DNS, Caddy, `DEFAULT_SERVER`,
+OG metadata) were kept since those are the site's own identity, not
+hyperlinks to the marketing site.
 
-- `public/analysis.html` — unlinked the "Veritas Supera IT Solutions LLC" footer reference; rewrote the "5x multiplier" footnote to point at the project README instead of the `vsits.co/three-layer-gate-quota-overage/` blog post.
-- `README.md` — dropped the "Blog series" link to `vsits.co/three-layer-gate-quota-overage/` from the Related section.
-- `package.json` — removed the `(https://vsits.co)` URL portion from the `author` field; kept the `<dev@vsits.co>` email since that's the npm-author convention for ownership identification.
+### 2026-05-20 — Re-read EULA, switched to Option C
 
-The redesign's React tree (`web/src/components/sections.jsx`) already renders "VSITS" and "Veritas Supera IT Solutions" as plain text with no hyperlinks, so no changes were needed there. The `meter.vsits.co` hostname references throughout the codebase (DNS, Caddy config, `DEFAULT_SERVER` constant, OG metadata) are not hyperlinks to the marketing site — they're the meter site's own identity — and stay.
+A primary-source re-read of the EULA on 2026-05-20 (sections quoted
+above) made clear that Option B is not supportable for a
+commercial-entity-operated public website. The operator chose Option C
+and the dashboard was ported from Highcharts to Apache ECharts in the
+same commit cycle on branch `feat/web-vite-react-dashboard-echarts`.
 
-— Design Agent
+**Operator: cnighswonger. Date: 2026-05-20. Rationale: the EULA as
+written does not provide a non-commercial path for this deployment;
+swap to a permissively-licensed alternative closes the question
+without recurring license cost.**
+
+### Out of scope
+
+Hardware-key-issued Highcharts developer licenses from prior years
+(the operator has historical contributor / customer status with
+Highsoft going back ~5–8 years) were under recovery during the review
+but were not part of the Option C decision. If a recovered license
+turns out to cover the current Highcharts version range, it can be
+weighed as a future revision; no commitment in this file.
+
+---
+
+## Sources cited
+
+- Highcharts EULA — <https://shop.highcharts.com/license-eula> (retrieved 2026-05-20). § 1.2 Personal Use, § 1.3 Educational Use, § 1.4 Commercial Use.
+- Highcharts Standard License — <https://shop.highcharts.com/license> (retrieved 2026-05-20). Public Websites clause.
+- Highcharts pricing — <https://shop.highcharts.com/> (retrieved 2026-05-20). Internal $185/seat/yr, SaaS $366/seat/yr, OEM by quote.
+- Apache ECharts npm package — <https://registry.npmjs.org/echarts/latest> (retrieved 2026-05-20). `.license` field: `Apache-2.0`.
+- Apache ECharts Handbook, waterfall pattern — <https://echarts.apache.org/handbook/en/how-to/chart-types/bar/waterfall/> (retrieved 2026-05-20).
+- Observable Plot npm package — <https://registry.npmjs.org/@observablehq%2Fplot/latest> (retrieved 2026-05-20). `.license` field: `ISC`.
+
+— Proxy Builder, on behalf of operator
