@@ -21,8 +21,8 @@ Most relevant implication for the redesign: introducing React + JSX-via-Babel-in
 
 ## 1. Hosting & runtime
 
-- **Where:** A single DigitalOcean droplet, `vsits-meter-01` (143.198.28.42). Not Pages / Workers / Vercel / Netlify.
-- **Region:** DigitalOcean NYC (confirmed by IP). Single region; no CDN origin redundancy.
+- **Where:** A single DigitalOcean droplet, `vsits-meter-01` (IP withheld from public docs — see internal deployment notes). Not Pages / Workers / Vercel / Netlify.
+- **Region:** DigitalOcean NYC. Single region; no CDN origin redundancy.
 - **OS:** Ubuntu LTS, Node.js 20 (system-installed).
 - **Supervisor:** systemd unit `claude-meter.service`. Runs as user `nobody`, group `nogroup`, `Restart=on-failure`. Unit file verbatim:
   ```ini
@@ -69,7 +69,7 @@ Most relevant implication for the redesign: introducing React + JSX-via-Babel-in
   }
   ```
   The Caddyfile is a `:80 {}` catch-all, which means **any hostname pointed at the droplet's port 80 is served by this site**. The legacy hostname `meter.veritassuperaitsolutions.com` and the current `meter.vsits.co` both hit it.
-- **Cloudflare:** proxied DNS (orange-cloud) on `meter.vsits.co` → 143.198.28.42. Cloudflare Configuration Rule: SSL/TLS mode **Flexible** for `meter.vsits.co` (zone-wide is Full to keep the WordPress site happy). The matcher field is `http.host` (not `http.request.full_uri`). Same setup exists in the legacy `veritassuperaitsolutions.com` zone for back-compat.
+- **Cloudflare:** proxied DNS (orange-cloud) on `meter.vsits.co` → droplet origin. Cloudflare Configuration Rule: SSL/TLS mode **Flexible** for `meter.vsits.co` (zone-wide is Full to keep the WordPress site happy). The matcher field is `http.host` (not `http.request.full_uri`). Same setup exists in the legacy `veritassuperaitsolutions.com` zone for back-compat.
 - **API + pages share one process.** Both the dashboard HTML and the JSON API are served by the same `node server/index.mjs` process. No split, no separate API host.
 - **Other services on the same box:** a Python `uvicorn` listening on `127.0.0.1:9090` for `kanfei-sensor.vsits.co` (separate Caddy block, separate app). Unrelated to the meter site but flagged so the design agent doesn't think there's a redundant API surface to worry about.
 
@@ -151,7 +151,7 @@ Most relevant implication for the redesign: introducing React + JSX-via-Babel-in
 
 - **How changes reach production:**
   1. Merge PR into `main` on GitHub.
-  2. SSH to `root@143.198.28.42`.
+  2. SSH to the droplet (host details in internal deployment notes).
   3. `cd /opt/claude-code-meter && git pull --ff-only origin main`
   4. `systemctl restart claude-meter`
   5. Spot-check `/api/v1/stats` and the rendered dashboard.

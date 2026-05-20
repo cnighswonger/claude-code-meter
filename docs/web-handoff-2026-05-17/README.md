@@ -2,8 +2,9 @@
 
 You are deploying a redesign of the dashboard at `https://meter.vsits.co/`. The
 existing site is at `/opt/claude-code-meter/public/index.html` on droplet
-`vsits-meter-01` (143.198.28.42). This handoff replaces that page only —
-`public/analysis.html`, `public/vendor/*`, and the Node API server are untouched.
+`vsits-meter-01` (IP withheld from public docs — see internal deployment notes).
+This handoff replaces that page only — `public/analysis.html`, `public/vendor/*`,
+and the Node API server are untouched.
 
 The new dashboard is React + Vite + Highcharts, built ahead of time into a static
 bundle and dropped into `public/` alongside the existing files. No server code
@@ -32,7 +33,7 @@ git push origin main
 ### Every deploy after that
 
 ```bash
-ssh root@143.198.28.42
+ssh root@<droplet>    # host details in internal deployment notes
 cd /opt/claude-code-meter
 git checkout -- package-lock.json          # the known stale-lockfile workaround
 git pull --ff-only origin main
@@ -273,7 +274,7 @@ no CDN, satisfies the "no Google Fonts" constraint.
 ## Rollback
 
 ```bash
-ssh root@143.198.28.42
+ssh root@<droplet>    # host details in internal deployment notes
 cd /opt/claude-code-meter
 git checkout -- package-lock.json
 git reset --hard <previous-commit-sha>

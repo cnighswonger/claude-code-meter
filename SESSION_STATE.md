@@ -5,7 +5,7 @@ Last updated: 2026-05-01T00:30Z
 ## Current Status
 
 - **npm**: `claude-code-meter@0.1.0` published (pending republish under new domain — see Migration below)
-- **Server**: `vsits-meter-01` (143.198.28.42:3847), Node 20 + Caddy + systemd
+- **Server**: `vsits-meter-01` (droplet IP withheld from public docs; service on port 3847), Node 20 + Caddy + systemd
 - **Dashboard**: `meter.vsits.co` (index.html + analysis.html). Pre-rebrand `meter.veritassuperaitsolutions.com` still serves the same backend via Caddy `:80 {}` catch-all + Cloudflare proxied DNS, so existing installs keep working until they upgrade.
 - **Daily cron**: 06:37 UTC, `analyze --share --yes`, logs to `~/.claude/meter-cron.log`
 - **Domain**: Cloudflare proxied; SSL Flexible per-hostname Configuration Rules (`(http.host eq "meter.vsits.co")` and equivalent for the legacy hostname). Zone-wide is Full for WordPress on both zones.
@@ -14,7 +14,7 @@ Last updated: 2026-05-01T00:30Z
 
 The corporate domain rebranded from veritassuperaitsolutions.com to vsits.co. Migration scope:
 
-- DNS A record `meter.vsits.co` → 143.198.28.42 in the vsits.co Cloudflare zone (proxied).
+- DNS A record `meter.vsits.co` → droplet origin in the vsits.co Cloudflare zone (proxied).
 - Cloudflare Configuration Rule overriding SSL/TLS mode to **Flexible** for `meter.vsits.co` (matches the existing rule on the old zone). **Gotcha**: matchers must use `http.host` field, not `http.request.full_uri` — the latter includes scheme + path so a wildcard pattern of just the hostname never fires. `(http.host eq "meter.vsits.co")` is the working form.
 - Code: `DEFAULT_SERVER`, consent scope, README links, and dashboard HTML company links all swapped to vsits.co. `package.json` author updated. Branch `feat/migrate-to-vsits-co`.
 - Caddy required NO changes — `:80 {}` catch-all already accepts every hostname.
