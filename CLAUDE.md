@@ -77,7 +77,7 @@ This repository is public. Anything committed becomes part of public git history
 **Acceptable patterns in public docs and runbooks:**
 
 - `<droplet>` or `<DROPLET_IP>` placeholder in place of literal IPs
-- `ssh root@<droplet>` rather than `ssh root@143.198.x.x`
+- `ssh root@<droplet>` rather than the literal `ssh root@<numeric-ip>` form
 - One-line pointer: "(host details in internal deployment notes — see `SESSION_STATE.md` on the operator's local checkout)" or similar. Keeps the runbook useful for someone with proper access without leaking the value.
 - Generic deployment shape descriptions are fine: "single DigitalOcean droplet behind Cloudflare-proxied DNS" gives readers the shape without enabling bypass.
 

@@ -6,16 +6,22 @@ existing site is at `/opt/claude-code-meter/public/index.html` on droplet
 This handoff replaces that page only — `public/analysis.html`, `public/vendor/*`,
 and the Node API server are untouched.
 
-The new dashboard is React + Vite + Highcharts, built ahead of time into a static
-bundle and dropped into `public/` alongside the existing files. No server code
-changes are required.
+The new dashboard is React + Vite + Apache ECharts, built ahead of time into a
+static bundle and dropped into `public/` alongside the existing files. No server
+code changes are required.
+
+> **Charting library note:** the redesign was originally built on Highcharts;
+> the dashboard was ported to Apache ECharts (Apache-2.0) on 2026-05-20 after a
+> primary-source re-read of the Highcharts EULA confirmed the prior
+> non-commercial framing was not supportable for this site. See `LICENSING.md`
+> for the full decision log.
 
 ---
 
 ## TL;DR — the deploy
 
 **Companion docs in this folder:**
-- `LICENSING.md` — Highcharts decision (read before deploying)
+- `LICENSING.md` — charting-library decision log (Option C / Apache ECharts adopted 2026-05-20)
 - `DEPLOYMENT_CONTEXT.md` — the operator's memo describing the current production setup, kept for reference
 - `MEMO_REQUEST.md` — the questions I asked to produce this handoff; included for audit only
 
@@ -49,20 +55,22 @@ curl -s -o /dev/null -w "%{http_code}\n" https://meter.vsits.co/   # → 200
 - `index.html` is the new React shell (the new bundle is named `assets/index-*.js`).
 - No requests to `unpkg.com`, `code.highcharts.com`, `fonts.googleapis.com`.
 - `/api/v1/stats` and `/api/v1/dataset?limit=1000` both return 200 JSON.
-- All 8 Highcharts render.
+- All 8 charts render (the dashboard uses Apache ECharts; no chart should fall through to the empty-state placeholder unless the dataset row is genuinely missing the underlying fields).
 
 ---
 
 ## Decisions you need to make BEFORE deploying
 
-Two open items the deployer must resolve. Both are flagged in `LICENSING.md`; read
-it first.
+One open item the deployer must resolve. It's flagged in `LICENSING.md`; read it
+first.
 
-1. **Highcharts license.** Current site uses Highcharts under the free
-   non-commercial use terms. This redesign continues that. If `meter.vsits.co` is
-   being promoted as a vsits.co product, that license becomes legally shaky. See
-   `LICENSING.md` for the swap-to-ECharts path. Don't deploy until the operator
-   has decided.
+1. **Charting-library licensing — resolved 2026-05-20.** The redesign was
+   originally built on Highcharts; primary-source re-reading of the Highcharts
+   EULA (§1.2 Personal Use, §1.4 Commercial Use, plus the Standard License's
+   Public Websites clause) made clear the prior non-commercial framing was not
+   supportable for this site. Option C (swap to Apache-2.0 ECharts) was taken
+   and the redesign was ported. See `LICENSING.md` Decision Log for the full
+   history. No further licensing decision is required from the deployer.
 
 2. **Plan tier for the value-multiplier section.** The dataset row's
    `plan_tier` field is currently `"unknown"` for the only contributor. The
@@ -145,15 +153,15 @@ npm run build:web
 | Lede ("the headline finding") | static editorial copy | React |
 | Proof strip ("1 contributor, 47,579 calls, …") | `/api/v1/stats` + dataset reduce | React + animated counters |
 | Three Findings cards (145×, 2.4×, 88%) | Derived: deduped dataset rows | React |
-| Subscription Value bar chart | `cost_analysis.{total_api_cost, no_cache_cost}` + monthly projection + plan prices | Highcharts (horizontal bar) |
-| "What 5× means" multiplier chart | Derived from monthly projection / capacity scaling | Highcharts (bar with baseline plotline) |
-| Opus 4.7 advisory | static editorial (until per-visible-token metric is added to the API — see "Open data wiring") | Highcharts (paired column) |
-| OLS coefficients | `ols.coefficients.*` averaged across deduped rows | Highcharts (diverging bar) + table |
-| Per-model cost | `model_splits.*` + Anthropic published rates | Highcharts (column) |
-| Peak vs off-peak | `peak_vs_offpeak.{peak_avg_q5h_per_turn, offpeak_avg_q5h_per_turn}` | Highcharts (paired column) |
+| Subscription Value bar chart | `cost_analysis.{total_api_cost, no_cache_cost}` + monthly projection + plan prices | Apache ECharts (horizontal bar) |
+| "What 5× means" multiplier chart (L(t)) | Derived from monthly projection / capacity scaling | Apache ECharts (bar with markLine baseline) |
+| Opus 4.7 advisory | static editorial (until per-visible-token metric is added to the API — see "Open data wiring") | Apache ECharts (paired column) |
+| OLS coefficients | `ols.coefficients.*` averaged across deduped rows | Apache ECharts (diverging bar) + table |
+| Per-model cost | `model_splits.*` + Anthropic published rates | Apache ECharts (column) |
+| Peak vs off-peak | `peak_vs_offpeak.{peak_avg_q5h_per_turn, offpeak_avg_q5h_per_turn}` | Apache ECharts (paired column) |
 | "5× decoded" table | `cost_analysis.total_api_cost`, `exponents.mean`, `fallback_pct`, etc. | React table |
-| Cache gauge | `cost_analysis.cache_savings_pct` averaged | Highcharts (solid-gauge) |
-| Savings waterfall | `cost_analysis.{no_cache_cost, cache_savings, total_api_cost}` + plan paid | Highcharts (waterfall) |
+| Cache gauge | `cost_analysis.cache_savings_pct` averaged | Apache ECharts (gauge with progress mode) |
+| Savings waterfall | `cost_analysis.{no_cache_cost, cache_savings, total_api_cost}` + plan paid | Apache ECharts (stacked-bar waterfall pattern) |
 | Methodology | static editorial + API endpoint list | React |
 | Contribute CTA | static (install command block) | React |
 | Footer | static + GitHub link | React |
@@ -203,10 +211,12 @@ The current API does NOT expose:
 - **Output dir:** `../public/` (i.e. `/opt/claude-code-meter/public/`) — same directory the existing static files live in
 - **`emptyOutDir: false`** so the build doesn't wipe `analysis.html` or `vendor/`
 - **Asset filenames:** `assets/[name]-[hash].js` and `assets/[name]-[hash].css`, content-hashed for cache busting
-- **Bundles inline:** Highcharts (core + highcharts-more for waterfall + solid-gauge + accessibility), React 18. (`annotations` and `pattern-fill` modules were dropped in this revision per the review — neither was referenced from `web/src`.)
+- **Bundles inline:** Apache ECharts via the tree-shakeable `echarts/core` entry point with explicit component registration (BarChart, GaugeChart, GridComponent, TooltipComponent, LegendComponent, MarkLineComponent, AriaComponent, CanvasRenderer), the `echarts-for-react/lib/core` React wrapper, and React 18. Unused ECharts components are not registered, so the bundle tree-shakes everything else out.
 - **Fonts:** system stack only (matches existing convention; no Google Fonts loaded). See "Fonts" below for the optional self-hosted-fonts path.
 
-Measured gzipped bundle size on this revision: **~240 KB JS + ~10 KB CSS** (per Codex's empirical `npm run build` during re-review — `assets/index-*.js` at 240.20 KB gzip). Highcharts core + highcharts-more + solid-gauge + accessibility dominate; expect ~220 KB of the JS to be Highcharts. If this is too large, code-split via dynamic `import()` of the chart components — each chart can be its own chunk loaded on-demand. Not done by default because the page is single-render and all charts are visible.
+Measured gzipped bundle size on this revision: **~254 KB JS + ~3 KB CSS** (per Codex's empirical `npm run build` during re-review — `assets/index-*.js` at 254.18 KB gzip). ECharts core + the registered chart/component subset dominates. If this is too large, code-split via dynamic `import()` of the chart components — each chart can be its own chunk loaded on-demand. Not done by default because the page is single-render and all charts are visible.
+
+(Historical: the pre-2026-05-20 Highcharts build measured 240.20 KB gzip on the same chart set. The ~14 KB increase covers the ECharts component registrations needed to match the prior chart-type coverage plus the React wrapper. Accessibility support via the ECharts `aria` config is less mature than Highcharts' a11y module — soft regression vs the prior redesign's a11y goal.)
 
 ---
 
@@ -299,14 +309,16 @@ After `npm run build` succeeds and the page is live:
 2. Browser-load `https://meter.vsits.co/`. Open DevTools → Network.
 3. Confirm:
    - `index.html` → 200, ~1 KB (Vite shell)
-   - `assets/*.js` → 200, **~240 KB gzipped** (Highcharts dominates — see "Build details" above for the measured figure as of this revision)
-   - `assets/*.css` → 200, ~10 KB gzipped
+   - `assets/*.js` → 200, **~254 KB gzipped** (Apache ECharts dominates — see "Build details" above for the measured figure as of this revision)
+   - `assets/*.css` → 200, ~3 KB gzipped
    - `/api/v1/stats` → 200, JSON
    - `/api/v1/dataset?limit=1000` → 200, JSON
    - **No requests to unpkg.com, code.highcharts.com, fonts.googleapis.com.**
-4. All 8 Highcharts render: subscription value bars, multiplier chart, OLS
+4. All 8 charts render: subscription value bars, L(t) multiplier chart, OLS
    diverging bar, per-model column, peak/off-peak column, Opus 4.7 paired
-   column, cache solid-gauge at the observed cache hit rate %, savings waterfall.
+   column, cache gauge (ECharts `gauge` with `progress` mode) at the observed
+   cache hit rate %, and the savings waterfall (ECharts stacked-bar pattern per
+   the Apache handbook).
 5. Animated counters in the proof strip count up on load.
 6. Page passes a quick Lighthouse pass — LCP under 2s, no render-blocking
    third-party JS.
