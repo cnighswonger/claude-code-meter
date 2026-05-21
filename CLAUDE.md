@@ -70,7 +70,7 @@ This repository is public. Anything committed becomes part of public git history
 - **Origin IPs** — literal IPv4/IPv6 addresses pointing at production hosts (droplets, load balancers, VPS, etc.)
 - **SSH targets** — `ssh root@<ip>` lines, hostname-port pairs that reach origin
 - **Internal service ports** that aren't surfaced through the public reverse-proxy / CDN
-- **Stack fingerprinting** — server hostnames combined with "what's running" details (e.g. `vsits-meter-01, Node 20 + Caddy + systemd, port 3847`). Fingerprinting narrows the attack surface even after an IP rotation.
+- **Stack fingerprinting** — server hostnames combined with "what's running" details (e.g. `<host-id>, <runtime> + <reverse-proxy> + <supervisor>, port <internal>`). Fingerprinting narrows the attack surface even after an IP rotation.
 
 **Why this is non-negotiable:** Cloudflare's WAF / DDoS protection only protects traffic that actually flows through Cloudflare. If the origin IP is in a public repo, an attacker can bypass Cloudflare entirely and hit the origin directly. The remediation path for an IP that has already been leaked to git history is rotating the IP itself (snapshot + recreate, or floating-IP reassignment) — there is no in-place "scrub" because git history is immutable.
 
