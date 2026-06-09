@@ -2,6 +2,26 @@
 
 > **Designator rename (2026-05-20):** The metric documented as `M(t)` in v0.6.x and earlier has been renamed to `L(t)` — "subscription-leverage multiplier" — after the M-symbol collided with @fgrosswig's `M_real` (`fgrosswig/claude-usage-dashboard`, a distinct compaction-penalty ratio). The formula, units, and reporting behavior are unchanged; only the designator differs. The historical entries below preserve the original `M(t)` name so the v0.6.x release record stays faithful to what shipped at the time. New code and docs use `L(t)`.
 
+## 0.7.0 (2026-06-09)
+
+**Schema acceptance for the optional `request_id` field on `MeterRowSchema v:1`.**
+
+Added an optional `request_id: z.string().max(64).optional()` field to `MeterRowSchema`. The cache-fix proxy emits this value when its operator opts in via `CACHE_FIX_USAGE_LOG_REQID=on` (default-off in cache-fix v4.1.0; default-on as of cache-fix v4.2.0). Sourced from the upstream `request-id` response header verbatim.
+
+Why this matters: cache-fix's `sid` field is `sha256(pid + Date.now() + Math.random()).slice(0, 8)` generated once at proxy boot and shared across every CC session that proxy serves. On multi-session hosts (agent fleets, concurrent runners), session-level cost questions are structurally unanswerable from the meter view — every session's rows collapse into the same `sid`. CC's per-session JSONL transcripts at `~/.claude/projects/<project>/<session-uuid>.jsonl` already carry `requestId` for every API call. With `request_id` in the meter row, the post-hoc join recovers per-CC-session attribution.
+
+**Cross-repo release-ordering contract:**
+
+- Producer (`claude-code-cache-fix` v4.1.0): default-OFF gate so unpatched meter installs don't ingest rows that fail validation. Field emitted only when operator opts in.
+- Consumer (this release): accepts the optional field; rows without it still validate (back-compat). No behavior change for operators not running the cache-fix gate.
+- Producer follow-up (`claude-code-cache-fix` v4.2.0): flips default-on. **Operators upgrading to cache-fix v4.2.0 must run claude-meter v0.7.0+ to ingest those rows.**
+
+Schema stays at `v: 1` (pure addition; no consumer's reading of existing fields changes). Strict-object semantics preserved — unknown sibling keys still reject.
+
+Tests: 7 new cases in `test/schema-request-id.test.mjs` covering back-compat (absent field), positive cases (valid value, 64-char boundary, 1-char minimum), negative cases (65-char tripwire, non-string types), and strict-object behavior preservation.
+
+See cache-fix [`docs/directives/proxy-usage-log-request-id.md`](https://github.com/cnighswonger/claude-code-cache-fix/blob/main/docs/directives/proxy-usage-log-request-id.md) for the full producer-side directive and rationale.
+
 ## 0.6.1 (2026-05-05)
 
 **Documentation: M_real attribution to `fgrosswig/claude-usage-dashboard`** (closes [#10](https://github.com/cnighswonger/claude-code-meter/issues/10)).
