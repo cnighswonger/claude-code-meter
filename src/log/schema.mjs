@@ -37,6 +37,16 @@ export const MeterRowSchema = z.strictObject({
   org_id: z.string().max(64).regex(/^[a-zA-Z0-9_-]*$/).optional(),            // anthropic-organization-id (hashed)
   overage_disabled_reason: z.string().max(64).optional(),                       // only present when overage blocked
 
+  // Upstream request-id (cache-fix v4.1.0+, gated default-off via
+  // CACHE_FIX_USAGE_LOG_REQID=on; default-on as of cache-fix v4.2.0).
+  // Sourced from the upstream `request-id` response header verbatim — opaque,
+  // server-generated, no regex enforced because format may evolve. Acts as
+  // the post-hoc join key against CC's per-session JSONL transcripts at
+  // ~/.claude/projects/<project>/<session-uuid>.jsonl (which carry the same
+  // value as `requestId`), recovering per-CC-session attribution that the
+  // proxy-boot-sticky `sid` field alone cannot provide.
+  request_id: z.string().max(64).optional(),
+
   // Derived
   cache_hit_rate: z.number().min(0).max(1),
   q5h_delta: z.number(),

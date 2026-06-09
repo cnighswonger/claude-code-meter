@@ -35,6 +35,8 @@ npm install -g claude-code-meter
 
 **Required collector:** since v0.4.0, claude-meter ingests data written by the [claude-code-cache-fix](https://github.com/cnighswonger/claude-code-cache-fix) proxy (>= 3.2.0). The proxy emits `MeterRowSchema` v:1 records to `~/.claude/usage.jsonl`; claude-meter reads from that file. The legacy `NODE_OPTIONS=--import` preload no longer works on Claude Code v2.1.113+ because the Bun binary ignores `NODE_OPTIONS`.
 
+**Recommended collector for v0.7.0+:** claude-code-cache-fix `>= 4.1.0`. v0.7.0 adds schema acceptance for the optional `request_id` field that cache-fix v4.1.0 introduced (default-off gate: `CACHE_FIX_USAGE_LOG_REQID=on`; default-on as of cache-fix v4.2.0). Without `request_id`, every CC session served by one proxy boot shares the same `sid`, collapsing session-level cost attribution. With it, every row carries the upstream `request-id` value that CC's per-session JSONL transcripts at `~/.claude/projects/<project>/<session-uuid>.jsonl` also record — the post-hoc join recovers per-session attribution. Older cache-fix versions can still emit valid rows (the field is optional and back-compat); they just can't be joined to per-session transcripts.
+
 ```bash
 # 1. Install the proxy (once)
 npm install -g claude-code-cache-fix
