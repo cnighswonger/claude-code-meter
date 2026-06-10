@@ -10,6 +10,8 @@ import {
   CapacityScenarioChart, CacheSensitivityChart, QuotaWindowsChart,
   SubstitutionChart, HypothesisRangeChart,
 } from "./analysis-charts.jsx";
+import { getModelMetric, shortenModel } from "../lib/model-metrics.mjs";
+import { EDITORIAL_COMPARISON_PAIR } from "../../../src/rates.mjs";
 
 // ─── Nav (Deep Analysis active) ──────────────────────────────────────────
 export function AnalysisNav() {
@@ -336,10 +338,16 @@ export function CacheSensitivitySection({ metrics }) {
 
 // ─── Section 4: Model substitution ────────────────────────────────────────
 export function SubstitutionSection({ metrics }) {
-  const opus47 = metrics.modelCostPerTurn["claude-opus-4-7"] || 0;
-  const haiku  = metrics.modelCostPerTurn["claude-haiku-4-5"] || 0;
-  if (opus47 === 0 || haiku === 0) return null;
-  const fullSwap = Math.round((1 - haiku / opus47) * 100);
+  // Substitution endpoints come from EDITORIAL_COMPARISON_PAIR.
+  // `expensive` is the premium model (Opus 4.7 by default); `cheaper` is
+  // the value model (Haiku 4.5 by default). Change the pair constant to
+  // retire/reshape the editorial story without touching this component.
+  const expensiveCost = getModelMetric(metrics, EDITORIAL_COMPARISON_PAIR.expensive, "modelCostPerTurn");
+  const cheaperCost = getModelMetric(metrics, EDITORIAL_COMPARISON_PAIR.cheaper, "modelCostPerTurn");
+  if (expensiveCost === 0 || cheaperCost === 0) return null;
+  const fullSwap = Math.round((1 - cheaperCost / expensiveCost) * 100);
+  const expensiveLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.expensive);
+  const cheaperLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.cheaper);
 
   return (
     <section>
@@ -350,25 +358,25 @@ export function SubstitutionSection({ metrics }) {
           <span className="rule" />
         </div>
         <h2 className="head">
-          Routing half your turns to Haiku <em>cuts API cost roughly in half.</em>
+          Routing half your turns to {cheaperLabel} <em>cuts API cost roughly in half.</em>
         </h2>
         <p className="section-deck">
-          Hypothetical: substitute Haiku 4.5 for Opus 4.7 on a fraction of turns.
-          Opus 4.7 costs <b style={{ color: "var(--ink)" }}>${opus47.toFixed(4)}</b>/turn;
-          Haiku 4.5 costs <b style={{ color: "var(--ink)" }}>${haiku.toFixed(4)}</b>/turn —
+          Hypothetical: substitute {cheaperLabel} for {expensiveLabel} on a fraction of turns.
+          {" "}{expensiveLabel} costs <b style={{ color: "var(--ink)" }}>${expensiveCost.toFixed(4)}</b>/turn;
+          {" "}{cheaperLabel} costs <b style={{ color: "var(--ink)" }}>${cheaperCost.toFixed(4)}</b>/turn —
           a {fullSwap}% reduction at full swap. Cheap models route, expensive models think.
         </p>
 
         <div className="chart-card">
           <div className="chart-head">
             <div>
-              <h3>Average $/turn at varying Haiku share</h3>
+              <h3>Average $/turn at varying {cheaperLabel} share</h3>
               <div className="sub">
-                Cost falls linearly with Haiku substitution. Quality concerns are
+                Cost falls linearly with {cheaperLabel} substitution. Quality concerns are
                 workload-dependent — measure before adopting any specific ratio.
               </div>
             </div>
-            <div className="meta">Opus 4.7 baseline ({fullSwap}% headroom)</div>
+            <div className="meta">{expensiveLabel} baseline ({fullSwap}% headroom)</div>
           </div>
           <SubstitutionChart modelCostPerTurn={metrics.modelCostPerTurn} />
           <div className="disclaim" style={{ marginTop: 18 }}>

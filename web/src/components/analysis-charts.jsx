@@ -4,6 +4,8 @@
 
 import React from "react";
 import { Chart, gradient, gradientH, colorWithAlpha } from "../lib/chartBase.jsx";
+import { getModelMetric, shortenModel } from "../lib/model-metrics.mjs";
+import { EDITORIAL_COMPARISON_PAIR } from "../../../src/rates.mjs";
 
 // ─── Q7d capacity by cache scenario — clustered column ───────────────────
 export function CapacityScenarioChart({ scenarios }) {
@@ -212,26 +214,35 @@ export function QuotaWindowsChart() {
 
 // ─── Model substitution savings — column ─────────────────────────────────
 export function SubstitutionChart({ modelCostPerTurn }) {
-  const opus47 = modelCostPerTurn["claude-opus-4-7"] || 0;
-  const haiku  = modelCostPerTurn["claude-haiku-4-5"] || 0;
-  if (opus47 === 0 || haiku === 0) return null;
+  // Substitution endpoints come from EDITORIAL_COMPARISON_PAIR so adding a
+  // model to KNOWN_RATES + MODEL_DISPLAY_ORDER doesn't require a separate
+  // chart-side patch. The .expensive endpoint is at 0% (full traffic stays
+  // on the configured "premium" model); the .cheaper endpoint is at 100%
+  // (full traffic moves to the configured "value" model). Mid-pct labels
+  // ("25% cheaper", "50% cheaper") name the cheaper model for clarity.
+  const metricsLike = { modelCostPerTurn };
+  const expensiveCost = getModelMetric(metricsLike, EDITORIAL_COMPARISON_PAIR.expensive, "modelCostPerTurn");
+  const cheaperCost = getModelMetric(metricsLike, EDITORIAL_COMPARISON_PAIR.cheaper, "modelCostPerTurn");
+  if (expensiveCost === 0 || cheaperCost === 0) return null;
 
+  const expensiveLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.expensive);
+  const cheaperLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.cheaper);
   const data = [
-    { pct: 0,   label: "All Opus 4.7" },
-    { pct: 25,  label: "25% Haiku" },
-    { pct: 50,  label: "50% Haiku" },
-    { pct: 75,  label: "75% Haiku" },
-    { pct: 100, label: "All Haiku 4.5" },
+    { pct: 0,   label: `All ${expensiveLabel}` },
+    { pct: 25,  label: `25% ${cheaperLabel}` },
+    { pct: 50,  label: `50% ${cheaperLabel}` },
+    { pct: 75,  label: `75% ${cheaperLabel}` },
+    { pct: 100, label: `All ${cheaperLabel}` },
   ].map((d) => ({
     name: d.label,
-    y: (1 - d.pct / 100) * opus47 + (d.pct / 100) * haiku,
+    y: (1 - d.pct / 100) * expensiveCost + (d.pct / 100) * cheaperCost,
     pct: d.pct,
   }));
 
   return (
     <Chart
       height={260}
-      deps={[opus47, haiku]}
+      deps={[expensiveCost, cheaperCost]}
       build={(t, base) => ({
         ...base,
         grid: { ...base.grid, left: 4, right: 4, top: 16, bottom: 14, containLabel: true },
@@ -256,9 +267,9 @@ export function SubstitutionChart({ modelCostPerTurn }) {
         },
         tooltip: { ...base.tooltip, trigger: "item",
           formatter: (p) => {
-            const pct = ((1 - p.value / opus47) * 100).toFixed(0);
+            const pct = ((1 - p.value / expensiveCost) * 100).toFixed(0);
             return `<b style="font-family:${base._fonts.fMono};">$${Number(p.value).toFixed(4)}</b>/turn<br/>` +
-                   `<span style="color:${t.muted};font-size:11px;">${pct}% cheaper than all-Opus</span>`;
+                   `<span style="color:${t.muted};font-size:11px;">${pct}% cheaper than all-${expensiveLabel}</span>`;
           },
         },
         legend: { ...base.legend, show: false },

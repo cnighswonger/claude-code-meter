@@ -13,6 +13,8 @@ import {
   SubscriptionValueChart, MultiplierChart, TokenCostChart, ModelCostChart,
   PeakOffPeakChart, Opus47Chart, CacheGauge, SavingsWaterfall,
 } from "./charts.jsx";
+import { getModelMetric, shortenModel } from "../lib/model-metrics.mjs";
+import { MODEL_BASELINE, EDITORIAL_COMPARISON_PAIR } from "../../../src/rates.mjs";
 
 // ─── Animated counter ─────────────────────────────────────────────────────
 function Counter({ value, prefix = "", suffix = "", duration = 1400,
@@ -512,9 +514,18 @@ export function TokenCost({ metrics }) {
 
 // ─── Per-model + peak/off-peak ────────────────────────────────────────────
 export function ModelCosts({ metrics }) {
+  // Note: opus46/opus47 here are part of the Opus 4.7 hidden-token advisory
+  // story (sections.jsx:530, :533-535). Editorial content, not configurable
+  // labels. Stays hardcoded.
   const opus46 = metrics.modelCostPerTurn["claude-opus-4-6"] || 0;
   const opus47 = metrics.modelCostPerTurn["claude-opus-4-7"] || 0;
   const delta = opus46 > 0 ? Math.round((opus47 / opus46 - 1) * 100) : 0;
+  // Editorial comparison-pair: configurable via EDITORIAL_COMPARISON_PAIR.
+  const cheaperCost = getModelMetric(metrics, EDITORIAL_COMPARISON_PAIR.cheaper, "modelCostPerTurn");
+  const expensiveCost = getModelMetric(metrics, EDITORIAL_COMPARISON_PAIR.expensive, "modelCostPerTurn");
+  const cheaperLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.cheaper);
+  const expensiveLabel = shortenModel(EDITORIAL_COMPARISON_PAIR.expensive);
+  const baselineLabel = shortenModel(MODEL_BASELINE);
 
   return (
     <section>
@@ -538,15 +549,15 @@ export function ModelCosts({ metrics }) {
             <div className="chart-head">
               <div>
                 <h3>API cost per turn · by model</h3>
-                <div className="sub">USD per conversational turn, ordered low to high. Bars annotated against the opus-4-6 baseline.</div>
+                <div className="sub">USD per conversational turn, ordered low to high. Bars annotated against the {baselineLabel} baseline.</div>
               </div>
             </div>
             <ModelCostChart metrics={metrics} />
             <div className="disclaim">
-              <b>haiku-4-5</b> is {opus47 > 0 && metrics.modelCostPerTurn["claude-haiku-4-5"] > 0
-                ? `~${Math.round(opus47 / metrics.modelCostPerTurn["claude-haiku-4-5"])}× cheaper`
+              <b>{cheaperLabel}</b> is {expensiveCost > 0 && cheaperCost > 0
+                ? `~${Math.round(expensiveCost / cheaperCost)}× cheaper`
                 : "much cheaper"}{" "}
-              per turn than opus-4-7 and a reasonable default for tool-routing and simple
+              per turn than {expensiveLabel} and a reasonable default for tool-routing and simple
               completions.
             </div>
           </div>
