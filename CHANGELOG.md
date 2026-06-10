@@ -2,6 +2,21 @@
 
 > **Designator rename (2026-05-20):** The metric documented as `M(t)` in v0.6.x and earlier has been renamed to `L(t)` — "subscription-leverage multiplier" — after the M-symbol collided with @fgrosswig's `M_real` (`fgrosswig/claude-usage-dashboard`, a distinct compaction-penalty ratio). The formula, units, and reporting behavior are unchanged; only the designator differs. The historical entries below preserve the original `M(t)` name so the v0.6.x release record stays faithful to what shipped at the time. New code and docs use `L(t)`.
 
+## 0.7.1 (2026-06-10)
+
+**Add `claude-fable-5` to `KNOWN_RATES` so Fable-5 calls are priced in cost analysis.**
+
+Fable-5 began rolling out to users yesterday but the model name was missing from `src/constants.mjs KNOWN_RATES`. The analyzer's `cost_analysis.by_model` only prices models present in `KNOWN_RATES`, so Fable-5 calls showed in `model_splits.n_calls` (the call count) but contributed $0 to cost — silently undercounting any session that used Fable.
+
+Rates from Anthropic email 2026-06-09 (pre-release projection; not yet on the [public pricing page](https://platform.claude.com/docs/en/docs/about-claude/pricing)):
+
+- Standard: `input $10 / output $50 per MTok`
+- Cache rates derived from the documented multipliers (`5m write = 1.25x base, 1h write = 2x base, read = 0.1x base`): `cache_write_5m $12.50 / cache_write_1h $20.00 / cache_read $1.00`
+
+A `TODO` comment is pinned to the entry asking for re-verification against the published pricing page when Fable-5 goes GA.
+
+No schema change, no behavior change for non-Fable models. Operators running Fable-5 will see the model appear in `cost_analysis.by_model` on the next `analyze --share`. Dashboard rendering of the new model category is a separate follow-up — the chart components currently hardcode a 4-model list that doesn't include Fable.
+
 ## 0.7.0 (2026-06-09)
 
 **Schema acceptance for the optional `request_id` field on `MeterRowSchema v:1`.**

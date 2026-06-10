@@ -49,6 +49,13 @@ export const KNOWN_RATES = {
   "claude-haiku-3-5": {
     standard: { input: 0.80, output: 4, cache_write_5m: 1.0, cache_write_1h: 1.6, cache_read: 0.08 },
   },
+  // claude-fable-5: pre-release rates from Anthropic email 2026-06-09; not
+  // yet on the public pricing page. Cache rates derived from the documented
+  // multipliers (5m write = 1.25x base, 1h write = 2x base, read = 0.1x base).
+  // TODO: re-verify against published pricing page when claude-fable-5 goes GA.
+  "claude-fable-5": {
+    standard: { input: 10, output: 50, cache_write_5m: 12.50, cache_write_1h: 20, cache_read: 1.00 },
+  },
 };
 
 // Community API server.
