@@ -36,6 +36,13 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    fs: {
+      // Allow Vite to serve files from the repo root. Chart components import
+      // ../../../src/rates.mjs (the pure-data constants module) for the
+      // model-display configuration. Production Rollup build follows
+      // filesystem paths fine; this is dev-only.
+      allow: [".."],
+    },
     proxy: {
       "/api": {
         target: "https://meter.vsits.co",

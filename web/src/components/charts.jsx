@@ -9,6 +9,8 @@
 
 import React from "react";
 import { Chart, gradient, gradientH, colorWithAlpha } from "../lib/chartBase.jsx";
+import { getModelMetric, shortenModel } from "../lib/model-metrics.mjs";
+import { MODEL_DISPLAY_ORDER, MODEL_BASELINE } from "../../../src/rates.mjs";
 
 // ─── 1. Subscription value — horizontal bar ───────────────────────────────
 export function SubscriptionValueChart({ metrics }) {
@@ -235,13 +237,28 @@ export function TokenCostChart({ metrics }) {
 
 // ─── 4. Per-model cost — column ───────────────────────────────────────────
 export function ModelCostChart({ metrics }) {
-  // Order: cheap → expensive, matching the original editorial layout
-  const labelOrder = ["claude-haiku-4-5", "claude-opus-4-6", "claude-sonnet-4-6", "claude-opus-4-7"];
+  // Order: cheap → expensive, sourced from MODEL_DISPLAY_ORDER (src/rates.mjs).
+  // Adding a new model to that constant automatically renders it here.
+  // The 4-color sequence matches the project's existing theme tokens. For
+  // MODEL_DISPLAY_ORDER entries beyond index 3, the color recycles by modulus
+  // (i % colors.length) — sharing tokens with earlier entries. When the chart
+  // needs distinct colors for 5+ models, add a 5th theme token AND a
+  // corresponding ternary branch in the color resolver below (~line 308).
   const colors = ["val", "info", "warn", "bad"];
-  const data = labelOrder
-    .map((m, i) => ({ name: shortenModel(m), y: metrics.modelCostPerTurn[m] || 0, kind: colors[i] }))
+  const data = MODEL_DISPLAY_ORDER
+    .map((m, i) => ({
+      name: shortenModel(m),
+      y: getModelMetric(metrics, m, "modelCostPerTurn"),
+      kind: colors[i % colors.length],
+    }))
     .filter((d) => d.y > 0);
-  const baseline = metrics.modelCostPerTurn["claude-opus-4-6"] || 0;
+  const baseline = getModelMetric(metrics, MODEL_BASELINE, "modelCostPerTurn");
+  // NOTE: If `baseline === 0`, MODEL_BASELINE has zero observed cost-per-turn
+  // in this dataset (the model sunset, or no one in the community has
+  // submitted using it this window). The renderer below suppresses the
+  // "% vs baseline" annotation and shows "baseline N/A" instead of silently
+  // picking a replacement model.
+  const baselineLabel = shortenModel(MODEL_BASELINE);
 
   return (
     <Chart
@@ -271,10 +288,14 @@ export function ModelCostChart({ metrics }) {
         },
         tooltip: { ...base.tooltip, trigger: "item",
           formatter: (p) => {
-            const vsBase = baseline > 0 ? ((p.value / baseline - 1) * 100).toFixed(0) : "0";
+            if (baseline <= 0) {
+              return `<b style="font-family:${base._fonts.fMono};">$${Number(p.value).toFixed(4)}</b> / turn<br/>` +
+                     `<span style="color:${t.muted};font-size:11px;">baseline N/A</span>`;
+            }
+            const vsBase = ((p.value / baseline - 1) * 100).toFixed(0);
             const sign = Number(vsBase) >= 0 ? "+" : "";
             return `<b style="font-family:${base._fonts.fMono};">$${Number(p.value).toFixed(4)}</b> / turn<br/>` +
-                   `<span style="color:${t.muted};font-size:11px;">${sign}${vsBase}% vs opus-4-6</span>`;
+                   `<span style="color:${t.muted};font-size:11px;">${sign}${vsBase}% vs ${baselineLabel}</span>`;
           },
         },
         legend: { ...base.legend, show: false },
@@ -286,7 +307,7 @@ export function ModelCostChart({ metrics }) {
             symbol: "none", silent: true,
             lineStyle: { color: t.hairStr, type: "dashed", width: 1 },
             label: {
-              formatter: "opus-4-6 baseline",
+              formatter: `${baselineLabel} baseline`,
               color: t.muted, fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
               position: "insideStartTop",
             },
@@ -312,10 +333,6 @@ export function ModelCostChart({ metrics }) {
       })}
     />
   );
-}
-
-function shortenModel(m) {
-  return m.replace(/^claude-/, "");
 }
 
 // ─── 5. Opus 4.7 paired column ────────────────────────────────────────────

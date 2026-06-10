@@ -2,6 +2,31 @@
 
 > **Designator rename (2026-05-20):** The metric documented as `M(t)` in v0.6.x and earlier has been renamed to `L(t)` — "subscription-leverage multiplier" — after the M-symbol collided with @fgrosswig's `M_real` (`fgrosswig/claude-usage-dashboard`, a distinct compaction-penalty ratio). The formula, units, and reporting behavior are unchanged; only the designator differs. The historical entries below preserve the original `M(t)` name so the v0.6.x release record stays faithful to what shipped at the time. New code and docs use `L(t)`.
 
+## [Unreleased]
+
+**Dashboard renders Fable-5 (and every future model added to `KNOWN_RATES`).** The community dashboard's chart components previously hardcoded a 4-model list (`opus-4-6`, `opus-4-7`, `haiku-4-5`, `sonnet-4-6`), so even though v0.7.1's analyzer priced Fable correctly, the chart never rendered it. Same silent-absent failure mode for every future Anthropic model.
+
+**New module split.** `src/constants.mjs` mixed pure data (rates, plan prices) with Node-only path setup (`homedir()`, `join()` at module load), making it unimportable from the browser bundle. v0.8.0 splits them:
+
+- `src/rates.mjs` (NEW, pure-data, browser-safe) — `KNOWN_RATES`, `RATES_LAST_VERIFIED`, `RATES_SOURCE_URL`, `PLAN_LIST_PRICE_PER_DAY`, plus three new display constants: `MODEL_DISPLAY_ORDER`, `MODEL_BASELINE`, `EDITORIAL_COMPARISON_PAIR`.
+- `src/constants.mjs` (slimmed) — Node-only path setup (`CLAUDE_DIR`, `LOG_FILE`, `CONFIG_FILE`, `PROXY_LOG_FILE`, `INGEST_OFFSET_FILE`, `DEFAULT_SERVER`, `MESSAGES_ENDPOINT`, `HEADERS`, `VERSION`, `SCHEMA_VERSION`). Re-exports the moved symbols from `./rates.mjs` for backwards compatibility — existing Node consumers (`src/cli/analyze.mjs`, `src/cli/rates.mjs`) see no API change.
+
+**Dashboard refactor.** The four chart components (`web/src/components/{charts,sections,analysis-charts,analysis-sections}.jsx`) now consume `MODEL_DISPLAY_ORDER`, `MODEL_BASELINE`, and `EDITORIAL_COMPARISON_PAIR` directly. Adding a model to `KNOWN_RATES` + `MODEL_DISPLAY_ORDER` automatically renders it in the by-model cost chart and the per-model comparison cards — no chart-component patch needed. User-visible labels (baseline annotation, substitution-endpoint labels, comparison-card copy) derive from `shortenModel(MODEL_BASELINE)` / `shortenModel(EDITORIAL_COMPARISON_PAIR.{cheaper,expensive})` so changing the constants updates both the math AND the visible story. Opus 4.7 advisory copy (the hidden-token hypothesis story) stays hardcoded — content, not configurable labels.
+
+**New helper.** `web/src/lib/model-metrics.mjs` centralizes `getModelMetric(metrics, modelKey, field)` and `shortenModel(m)` for use by all 4 chart components.
+
+**Tests.** 13 new cases in `test/rates-display.test.mjs`:
+
+- `MODEL_DISPLAY_ORDER` is non-empty, all entries are `KNOWN_RATES` keys, no duplicates.
+- `MODEL_BASELINE` is a non-empty string, key in `KNOWN_RATES`, key in `MODEL_DISPLAY_ORDER` (stronger invariant).
+- `EDITORIAL_COMPARISON_PAIR.cheaper` and `.expensive` are both in `MODEL_DISPLAY_ORDER` and distinct.
+- Re-export contract: each moved symbol imported from `src/constants.mjs` is referentially equal to the same symbol from `src/rates.mjs` — an implementation that omits or misspells a re-export fails at CI.
+- `src/rates.mjs` has zero `node:*` imports (browser-safe contract).
+
+**Vite config: `server.fs.allow: ['..']` added** to `web/vite.config.mjs` so the dev server can serve `../../../src/rates.mjs` to the chart components. Production Rollup build follows filesystem paths fine; this is dev-only.
+
+**Directive:** `docs/directives/dashboard-dynamic-models.md`. Reviewed under the multi-LLM chain (Fable → Codex → AITL gate) — Fable round-1 caught the Vite bundler boundary and the `MODEL_DISPLAY_ORDER` ordering-invariant violation; Codex round-1 caught the re-export contract test gap and the user-visible-copy enumeration. Closes [#26](https://github.com/cnighswonger/claude-code-meter/issues/26).
+
 ## 0.7.1 (2026-06-10)
 
 **Add `claude-fable-5` to `KNOWN_RATES` so Fable-5 calls are priced in cost analysis.**
