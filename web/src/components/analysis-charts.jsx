@@ -242,7 +242,7 @@ export function SubstitutionChart({ modelCostPerTurn }) {
   return (
     <Chart
       height={260}
-      deps={[opus47, haiku]}
+      deps={[expensiveCost, cheaperCost]}
       build={(t, base) => ({
         ...base,
         grid: { ...base.grid, left: 4, right: 4, top: 16, bottom: 14, containLabel: true },
@@ -267,9 +267,9 @@ export function SubstitutionChart({ modelCostPerTurn }) {
         },
         tooltip: { ...base.tooltip, trigger: "item",
           formatter: (p) => {
-            const pct = ((1 - p.value / opus47) * 100).toFixed(0);
+            const pct = ((1 - p.value / expensiveCost) * 100).toFixed(0);
             return `<b style="font-family:${base._fonts.fMono};">$${Number(p.value).toFixed(4)}</b>/turn<br/>` +
-                   `<span style="color:${t.muted};font-size:11px;">${pct}% cheaper than all-Opus</span>`;
+                   `<span style="color:${t.muted};font-size:11px;">${pct}% cheaper than all-${expensiveLabel}</span>`;
           },
         },
         legend: { ...base.legend, show: false },
