@@ -2,10 +2,10 @@
 
 **Issue:** #26
 **Branch:** `feature/dashboard-dynamic-models`
-**Stage:** directive (round 2 — addresses [PR #28 Fable round-1 review](https://github.com/cnighswonger/claude-code-meter/pull/28))
+**Stage:** directive (round 3 — addresses Fable round-2 APPROVE_WITH_NITS following [PR #28 Fable round-1 review](https://github.com/cnighswonger/claude-code-meter/pull/28))
 **Milestone:** v0.8.0 (minor — additive constants surface, dashboard refactor; data shape unchanged)
 
-## Round-2 changes (from Fable round-1 review on PR #27)
+## Round-2 changes (from Fable round-1 review artifact in PR #28)
 
 1. **Blocker fix:** display constants and `KNOWN_RATES` move to a new pure-data module `src/rates.mjs` (no `node:` imports). `src/constants.mjs` re-exports for existing consumers; the chart components import from `../../../src/rates.mjs`. Resolves the Vite-build break the round-1 directive introduced.
 2. **Blocker fix:** `MODEL_DISPLAY_ORDER` example value places `claude-fable-5` LAST (after `claude-opus-4-7`) because Fable is the most-expensive model in the rate card. Ordering criterion explicitly stated as "observed median cost-per-turn from the most recent submitted analysis, with the rate card as tiebreaker for new models with no observed data."
@@ -16,6 +16,13 @@
 7. **Precision: "17 literals across 14 lines"** (was "11 references" in round 1).
 8. **Precision: "model-split chart" reference removed** from acceptance criteria — `modelSplits` is only read by section comparison cards, not a chart surface.
 9. **Visual regression: before-screenshot capture step explicit** in the implementation reviewer checklist.
+
+## Round-3 nits (from Fable round-2 APPROVE_WITH_NITS)
+
+10. **Fable-less window case** in the visual regression test plan: the chart's `.filter((d) => d.y > 0)` hides zero-data models, so if the production window happens to have no Fable submissions, the eyeball check is vacuous. Test plan #2 now requires the implementation-PR author to verify Fable rendering using a synthesized stats payload when the production window lacks Fable rows.
+11. **"~10% of each file's model-resolution code paths" deleted** from the NFR size budget — Fable correctly observed this was unmeasurable at review time. The 150-250 LOC budget plus "flag at review if the diff materially exceeds that" is the enforceable part.
+12. **"PR #27" / "PR #28" framing reconciled** in the Stage line and the Round-2 changes heading — both now say "PR #28" (the artifact lives there as the durable record).
+13. **`MODEL_BASELINE` doc comment wording corrected** — "asserts at module load" → "asserts at CI" (tests assert at CI time, not module load).
 
 ## Goal
 
@@ -38,7 +45,7 @@ Total: **17 literals across 14 lines in 4 files.** The editorial-pair literals (
 
 ## Non-Functional Requirements
 
-- **Size/complexity budget:** ~150-250 LOC across 7 files (new `src/rates.mjs`, `src/constants.mjs` re-export update, 4 chart components, 1 new test file, 1 new helper file). The 4 chart files total 2,404 LOC; the refactor touches ~10% of each file's model-resolution code paths. Flag at review if the diff materially exceeds that.
+- **Size/complexity budget:** ~150-250 LOC across 7 files (new `src/rates.mjs`, `src/constants.mjs` re-export update, 4 chart components, 1 new test file, 1 new helper file). The 4 chart files total 2,404 LOC. Flag at review if the diff materially exceeds the 150-250 LOC budget.
 - **Threat model:** dashboard is public-facing but read-only and serves aggregated community data only. The refactor touches NO server endpoints, NO schemas, NO submission code. The new `src/rates.mjs` module is a pure-data export with no `node:` imports — explicitly so the browser bundle can consume it. No new secret-handling surface.
 - **Maintainability constraints:** the pure-data module is the project's new single source of truth for "the models the dashboard knows about" and the "X vs baseline" reference. Existing Node consumers (`src/cli/analyze.mjs`) continue to import from `src/constants.mjs` via the re-export. Avoid parallel constants. The helper module `web/src/lib/model-metrics.mjs` is the home for any 2+-consumer accessor.
 - **Performance/reliability:** chart renders are client-side, no server impact. Model lists are small (~7-10 entries even with growth) so `Object.entries()` iteration is O(n) trivial.
@@ -99,7 +106,8 @@ export const MODEL_DISPLAY_ORDER = [
 // baseline to the next-most-used model).
 //
 // INVARIANT: MUST be a key present in MODEL_DISPLAY_ORDER. A unit
-// test asserts this at module-load to fail-fast on misconfiguration.
+// test asserts this at CI to fail-fast on misconfiguration before any
+// production render.
 // Renderer behavior when the baseline has zero data in the current
 // window: surface the condition explicitly in the chart (e.g.,
 // "baseline opus-4-6 has no data this window" subtitle), NOT a silent
@@ -204,6 +212,7 @@ The helper is intentionally thin. If more sophisticated lookup logic (e.g., "fal
    - **Before screenshot:** capture from `https://meter.vsits.co/` (the production droplet, which is on `main`) BEFORE landing this directive's implementation. The implementation PR's reviewer checklist references the captured screenshot at a specific URL or attached file; the screenshot is captured by the implementation-PR author and posted in the PR body.
    - **After screenshot:** capture from a local `npm run dev` against the same production `/api/v1/stats` data after the refactor. Post in the implementation PR alongside the before screenshot.
    - Eyeball comparison: the existing 4-model chart should be visually identical (color order, sort order, bar heights, baseline annotation). Fable-5 appears at the declared position with its assigned color.
+   - **Fable-less window case:** the chart's `.filter((d) => d.y > 0)` hides zero-data models, so if the production window happens to have no Fable submissions, the "Fable-5 appears" eyeball check is vacuous. When the production window lacks Fable rows, the implementation-PR author MUST also verify Fable rendering using a locally synthesized stats payload (inject a Fable row into the dev server's mock data or override the API response in the browser) and note this fallback path in the PR body. Without this, a Fable-less window could pass the eyeball check while the directive's load-bearing acceptance criterion is unverified.
 3. **Integration on droplet:** after merge + deploy, fetch `https://meter.vsits.co/` and confirm Fable renders.
 
 ## Out of scope (explicit)
