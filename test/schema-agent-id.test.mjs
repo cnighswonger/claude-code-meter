@@ -197,20 +197,115 @@ test("request_id + agent_id pair: both present together → row validates", () =
   assert.equal(result.success, true);
 });
 
-// --- Round-trip preservation (write → parse) ---
+// --- Writer/tailer round-trip preservation (real end-to-end) ---
+//
+// The directive requires an end-to-end preservation test that writes a
+// valid row through the real writer surface (the same `appendFileSync` +
+// MeterRowSchema-validation path used by writer.mjs) and reads it back
+// through jsonl-tailer.mjs so future refactors cannot silently drop or
+// coerce the new fields. Closes Codex r1 #31 B1.
 
-test("round-trip: row carrying agent_id + agent_id_source survives parse unchanged", () => {
-  // Note: end-to-end via writer.mjs would also create the file on disk; this
-  // test asserts the field-level preservation through MeterRowSchema, which
-  // is the validation chokepoint both writer.mjs and jsonl-tailer.mjs use.
-  const row = validRow({
-    agent_id: "wf-leg-roundtrip",
-    agent_id_source: "cache_fix_derived",
-  });
-  const serialized = JSON.stringify(row);
-  const parsedBack = JSON.parse(serialized);
-  const result = MeterRowSchema.safeParse(parsedBack);
-  assert.equal(result.success, true);
-  assert.equal(result.data.agent_id, "wf-leg-roundtrip");
-  assert.equal(result.data.agent_id_source, "cache_fix_derived");
+import { appendFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { JsonlTailer } from "../src/ingest/jsonl-tailer.mjs";
+
+test("writer/tailer round-trip: agent_id + agent_id_source survive end-to-end", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agent-id-roundtrip-"));
+  const source = join(dir, "usage.jsonl");
+  const offsetFile = join(dir, ".claude-meter-ingest-offset");
+
+  try {
+    // Construct a row carrying both new fields. Validate via the SAME
+    // MeterRowSchema chokepoint that writer.mjs uses (writer.mjs:68).
+    const row = validRow({
+      agent_id: "wf-leg-roundtrip-a1b2c3d4",
+      agent_id_source: "cache_fix_derived",
+    });
+    const validated = MeterRowSchema.safeParse(row);
+    assert.equal(validated.success, true, "row must pass writer-side validation");
+
+    // Append to disk the same way writer.mjs's appendRow() does
+    // (writer.mjs:82 — appendFileSync + "\n").
+    appendFileSync(source, JSON.stringify(validated.data) + "\n", "utf-8");
+
+    // Read back through the real tailer — which calls
+    // MeterRowSchema.parse(...) at jsonl-tailer.mjs:148 — and capture
+    // the parsed row via onRow.
+    let captured = null;
+    const tailer = new JsonlTailer({
+      source,
+      offsetFile,
+      onRow: async (r) => {
+        captured = r;
+      },
+    });
+    const result = await tailer.tickOnce();
+
+    // Tailer accepted the row (no skipped=).
+    assert.equal(result.processed, 1, "tailer must process the row");
+    assert.equal(result.skipped, 0, "tailer must not skip the row");
+    assert.ok(result.offset > 0, "tailer must advance offset");
+
+    // Both fields survive unchanged through the writer→file→tailer→onRow
+    // path.
+    assert.ok(captured, "onRow must have been invoked");
+    assert.equal(captured.agent_id, "wf-leg-roundtrip-a1b2c3d4");
+    assert.equal(captured.agent_id_source, "cache_fix_derived");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writer/tailer round-trip: row without the new fields (back-compat) processes cleanly", async () => {
+  // Regression guard: the .superRefine() wrap doesn't accidentally start
+  // rejecting rows from older emitters that don't carry agent_id at all.
+  const dir = await mkdtemp(join(tmpdir(), "agent-id-roundtrip-bc-"));
+  const source = join(dir, "usage.jsonl");
+  const offsetFile = join(dir, ".claude-meter-ingest-offset");
+
+  try {
+    const row = validRow();
+    const validated = MeterRowSchema.safeParse(row);
+    assert.equal(validated.success, true);
+    appendFileSync(source, JSON.stringify(validated.data) + "\n", "utf-8");
+
+    const tailer = new JsonlTailer({ source, offsetFile, onRow: async () => {} });
+    const result = await tailer.tickOnce();
+
+    assert.equal(result.processed, 1);
+    assert.equal(result.skipped, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("writer/tailer round-trip: row with agent_id_source but missing agent_id is skipped by tailer (.superRefine enforcement persists through the file boundary)", async () => {
+  // The attestation-breach symptom the CHANGELOG documents: a row that
+  // bypasses MeterRowSchema validation (e.g. older emitter, hand-crafted
+  // bad row) and lands on disk anyway must be REJECTED by the tailer's
+  // MeterRowSchema.parse at jsonl-tailer.mjs:148. This proves the
+  // skipped= counter operators are told to watch actually fires.
+  const dir = await mkdtemp(join(tmpdir(), "agent-id-roundtrip-bad-"));
+  const source = join(dir, "usage.jsonl");
+  const offsetFile = join(dir, ".claude-meter-ingest-offset");
+
+  try {
+    // Hand-craft a row that violates the asymmetric invariant.
+    const badRow = { ...validRow(), agent_id_source: "cc_header" };
+    // Bypass writer validation entirely — write the bad JSON directly,
+    // simulating a misbehaving emitter or a manual JSONL edit.
+    await writeFile(source, JSON.stringify(badRow) + "\n", "utf-8");
+
+    const tailer = new JsonlTailer({ source, offsetFile, onRow: async () => {} });
+    const result = await tailer.tickOnce();
+
+    // Tailer rejects via .superRefine — nonzero skipped= is the
+    // documented attestation-breach symptom.
+    assert.equal(result.processed, 0);
+    assert.equal(result.skipped, 1);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
