@@ -4,6 +4,25 @@
 
 ## [Unreleased]
 
+**Optional `agent_id` + `agent_id_source` fields on `MeterRowSchema` for Workflow-tool subagent attribution (refs [cnighswonger/claude-code-cache-fix#215](https://github.com/cnighswonger/claude-code-cache-fix/issues/215), refs upstream [anthropics/claude-code#66761](https://github.com/anthropics/claude-code/issues/66761)).** Per CC#66761, Claude Code sets the canonical `x-claude-code-agent-id` header on Task/Agent-tool subagents but NOT on Workflow-tool–spawned subagents — operators running fan-out workflows (`agent()`, `parallel()`, `pipeline()`) cannot attribute per-Workflow-leg cost. v0.8.0 adds the two fields the cache-fix proxy needs to emit for that gap to close:
+
+- `agent_id` — string, max 64, optional. The attribution key for the request.
+- `agent_id_source` — enum `"cc_header" | "cache_fix_derived"`, optional. The provenance of the value (canonical CC-header pass-through vs. cache-fix proxy-derived for Workflow-tool subagents whose canonical headers are absent).
+
+Both fields are `.optional()`; schema version stays at `v: 1` (additive). The schema now carries a `.superRefine()` enforcing the asymmetric invariant: **`agent_id_source` present ⇒ `agent_id` present**. The reverse is allowed — `agent_id` may appear without `agent_id_source` because the canonical/derived provenance is recoverable from `sid` + `request_id` correlation against the proxy event log. **Casing is a wire contract**: snake_case (`cc_header`, `cache_fix_derived`) matches the schema's universal convention (`five_hour`, `seven_day`, `max_5`, `max_20`, `enterprise`, `standard`, `fast`, `mixed`); the cache-fix emitter at `proxy/extensions/usage-log.mjs` must use the exact same byte sequences. Kebab-case (`cc-header`) is REJECTED. Future enum-value additions to `agent_id_source` (e.g. a third value for dashboard-manual attribution) re-trigger the same meter-first / emitter-second rollout discipline — old meters reject rows carrying new enum values for the same reason they reject rows with new keys.
+
+**Operator attestation contract.** Setting `CACHE_FIX_USAGE_LOG_AGENT_ID=on` on the cache-fix proxy IS the operator's attestation that meter v0.8.0+ is installed. Setting it against older meter (v0.7.x) produces rows with unknown keys that the strict-object schema rejects.
+
+**Observable symptom of an attestation breach.** If you flip the env-var without upgrading meter, every emitted row carrying `agent_id` is rejected by the tailer. The visible symptom is a nonzero `skipped=` count in `claude-meter ingest` tick output; under `CLAUDE_METER_DEBUG=1` the skip is logged with the validation error and the row never appears in the dashboard. The legacy `claude-meter write` path drops silently with no log — operators relying on that path should verify their meter version before flipping the env-var.
+
+**`.superRefine()` wrap implications.** `MeterRowSchema` is now a `ZodEffects` wrapper around the underlying `z.strictObject`. The wrap is safe today — `src/log/writer.mjs:68` and `src/ingest/jsonl-tailer.mjs:148` are the only validation chokepoints in the tree, both using `.safeParse()` / `.parse()` which `ZodEffects` supports identically. Future maintainers extending the schema via `.shape`, `.extend()`, or `.pick()` must unwrap to the inner `z.strictObject` first; those properties don't traverse the wrap.
+
+**Tests.** 21 new cases in `test/schema-agent-id.test.mjs`: back-compat (both absent), both present (each enum value), value-without-source allowed, source-without-value REJECTED (each enum value), kebab-case rejection, unknown-enum rejection, 64-char boundary accept, 65-char boundary reject, type-rejection sweep (number/null/array/object/boolean), strict-object preservation through the wrap (unknown-sibling-key still rejects), request_id rollout regression, request_id + agent_id pair, round-trip preservation. Existing `test/schema-request-id.test.mjs` continues to pass unchanged.
+
+**Directive:** [`docs/directives/agent-id-schema-addition.md`](docs/directives/agent-id-schema-addition.md). Reviewed under the multi-LLM chain (Fable → Codex → AITL gate).
+
+---
+
 **Dashboard renders Fable-5 (and every future model added to `KNOWN_RATES`).** The community dashboard's chart components previously hardcoded a 4-model list (`opus-4-6`, `opus-4-7`, `haiku-4-5`, `sonnet-4-6`), so even though v0.7.1's analyzer priced Fable correctly, the chart never rendered it. Same silent-absent failure mode for every future Anthropic model.
 
 **New module split.** `src/constants.mjs` mixed pure data (rates, plan prices) with Node-only path setup (`homedir()`, `join()` at module load), making it unimportable from the browser bundle. v0.8.0 splits them:
