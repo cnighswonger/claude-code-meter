@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-06-13
+
 **Optional `agent_id` + `agent_id_source` fields on `MeterRowSchema` for Workflow-tool subagent attribution (refs [cnighswonger/claude-code-cache-fix#215](https://github.com/cnighswonger/claude-code-cache-fix/issues/215), refs upstream [anthropics/claude-code#66761](https://github.com/anthropics/claude-code/issues/66761)).** Per CC#66761, Claude Code sets the canonical `x-claude-code-agent-id` header on Task/Agent-tool subagents but NOT on Workflow-tool–spawned subagents — operators running fan-out workflows (`agent()`, `parallel()`, `pipeline()`) cannot attribute per-Workflow-leg cost. v0.8.0 adds the two fields the cache-fix proxy needs to emit for that gap to close:
 
 - `agent_id` — string, max 64, optional. The attribution key for the request.
@@ -17,7 +19,7 @@ Both fields are `.optional()`; schema version stays at `v: 1` (additive). The sc
 
 **`.superRefine()` wrap implications.** `MeterRowSchema` is now a `ZodEffects` wrapper around the underlying `z.strictObject`. The wrap is safe today — `src/log/writer.mjs:68` and `src/ingest/jsonl-tailer.mjs:148` are the only validation chokepoints in the tree, both using `.safeParse()` / `.parse()` which `ZodEffects` supports identically. Future maintainers extending the schema via `.shape`, `.extend()`, or `.pick()` must unwrap to the inner `z.strictObject` first; those properties don't traverse the wrap.
 
-**Tests.** 21 new cases in `test/schema-agent-id.test.mjs`: back-compat (both absent), both present (each enum value), value-without-source allowed, source-without-value REJECTED (each enum value), kebab-case rejection, unknown-enum rejection, 64-char boundary accept, 65-char boundary reject, type-rejection sweep (number/null/array/object/boolean), strict-object preservation through the wrap (unknown-sibling-key still rejects), request_id rollout regression, request_id + agent_id pair, round-trip preservation. Existing `test/schema-request-id.test.mjs` continues to pass unchanged.
+**Tests.** 23 new cases in `test/schema-agent-id.test.mjs`: back-compat (both absent), both present (each enum value), value-without-source allowed, source-without-value REJECTED (each enum value), kebab-case rejection, unknown-enum rejection, 64-char boundary accept, 65-char boundary reject, type-rejection sweep (number/null/array/object/boolean), strict-object preservation through the wrap (unknown-sibling-key still rejects), request_id rollout regression, request_id + agent_id pair, plus three real writer/tailer round-trip cases exercising `src/log/writer.mjs`'s validation path and `src/ingest/jsonl-tailer.mjs`'s parse path: round-trip preservation with the new fields, round-trip back-compat without the fields, and round-trip attestation-breach symptom (bad row bypasses writer validation, lands on disk, tailer rejects via `.superRefine()` — `skipped=1` — proving the documented operator-visible counter fires through the file boundary). Existing `test/schema-request-id.test.mjs` continues to pass unchanged.
 
 **Directive:** [`docs/directives/agent-id-schema-addition.md`](docs/directives/agent-id-schema-addition.md). Reviewed under the multi-LLM chain (Fable → Codex → AITL gate).
 
