@@ -2,8 +2,20 @@
 
 **Issues:** [#33](https://github.com/cnighswonger/claude-code-meter/issues/33) (this directive) + [#34](https://github.com/cnighswonger/claude-code-meter/issues/34) (follow-up; depends on this contract)
 **Directive branch / Implementation branch:** `feature/rates-windowing` (single branch — the contract is narrow enough that the directive + implementation can ride together; see "Process" below)
-**Stage:** directive — round 1
+**Stage:** directive — round 2 (amended after Codex r1)
 **Milestone:** v0.8.1 (patch — `rates` CLI semantics change, no schema change)
+
+## Revision history
+
+- **r1 → r2** (this amendment): folded Codex r1 REQUEST_CHANGES findings.
+  - Added `bin/claude-meter.mjs` as a load-bearing implementation surface with explicit `parseArgs` flag declarations for `--by` and `--tier-start-date`; CLI-parser tests run as subprocess against the entrypoint, not just direct `ratesCommand` calls (Codex r1 Blocker 1).
+  - Chronology rules now exercised against a separate synthetic chronology fixture; the AITL anonymized fixture remains regression-only (Codex r1 Blocker 2; AITL adjudication: option B).
+  - Mixed-model windows: defined as load-bearing — group by `q5h_reset` AND filter to single-model windows, fit per `(model|speed)`, drop mixed windows from every fit (Codex r1 Blocker 3; AITL adjudication: option C). Added insufficient-data warning when N < 20 per pair.
+  - Cache-fix marker detection cites the actual schema row keys (`agent_id`, `request_id`) from `src/log/schema.mjs:105`/`:115`, not `_workflowAgentId`.
+  - Held-out validation language clarified to single-hold-out (was ambiguous between leave-one-out and v1's actual single hold-out).
+  - Removed pseudocode `--fixture` flag from verification; tests load the AITL fixture by direct file read in the harness.
+  - Sparse-data error message phrasing reframed as "collect more data or use deprecated `--by row` for legacy comparison."
+  - LOC budget revised to ~200 impl + ~200 tests to account for added CLI plumbing + synthetic fixture + insufficient-data path.
 
 ## Goal
 
@@ -30,13 +42,13 @@ This isn't a "nice to have" precision improvement. The per-row regression return
 
 ## Non-Functional Requirements
 
-- **Size/complexity budget:** ~150 LOC implementation (window aggregator + window-mode regression path + held-out validation) + ~120 LOC tests including the AITL-provided 90-window fixture. Reviewers should flag if this drifts materially past 2× the budget.
+- **Size/complexity budget:** ~200 LOC implementation (window aggregator + window-mode regression path + held-out validation + `bin/claude-meter.mjs` parser additions + insufficient-data warning + single-model filter) + ~200 LOC tests (AITL fixture-driven weight recovery + synthetic chronology fixture + subprocess CLI-parser tests). Reviewers should flag if this drifts materially past 2× the budget.
 
 - **Threat model:** no new on-disk surface, no new credentials, no new wire fields. The CLI reads the same JSONL the existing `rates` command reads. The fixture file added to the repo is the AITL-provided anonymized sample (90 `(cache_read_M, cache_create_M, input_M, output_M, q5h_max)` tuples, Codex-cleared SAFE_TO_SHIP — no per-row data, no sids, no timestamps, no source attribution, shuffled). No change to threat profile from the existing `rates` command.
 
 - **Maintainability constraints:** the window aggregator goes in `src/log/reader.mjs` as a new exported function. No new module needed. The OLS regression machinery in `src/cli/rates.mjs` (`olsRegression`, `invertMatrix`) is reusable — the window-mode path constructs the same `X`/`y` matrix shape, just at window granularity. No new abstractions; the diff is a feature flag on aggregation, not a new code spine.
 
-- **Performance/reliability:** the aggregator is O(rows). Held-out window validation is one OLS fit per left-out window; if the window count is large enough that this matters (>1000 windows), the implementation should hold out the most-recent window only. v1 implementation: hold out the most-recent qualifying window unconditionally.
+- **Performance/reliability:** the aggregator is O(rows). Held-out validation is a single hold-out: per `(model|speed)`, drop the most-recent qualifying completed window, fit OLS on the remainder, predict the held-out window's `q5h_max`, report the percent error. No leave-one-out machinery in v1. Hold-out window selection is deterministic from chronology (most-recent qualifying after applying all filters) — no random sampling.
 
 - **Load-bearing? No.** The change is to a `rates` CLI semantics knob. No schema change. No wire contract change. The dashboard at meter.vsits.co does NOT consume `rates` output (per AITL); the CLI is the sole consumer. The `--by row` back-compat opt-out (see §"CLI surface" below) covers anyone scripting against the prior weights.
 
@@ -96,13 +108,22 @@ Inference (deriving tier-start from the first observed `q7d` reset after install
 
 ### Other filter thresholds (hard-coded, not flagged)
 
-The window-mode aggregator applies three filters before regression:
+The window-mode aggregator applies four filters before regression:
 
 1. **`q5h_max >= 0.10`** — windows with less than 10% Q5h consumption don't carry enough signal to constrain the fit.
 2. **`rows_per_window >= 20`** — windows with fewer than 20 rows likely represent a brief use spike or partial-window observation, not a real workload.
 3. **Excludes the in-progress current window** — the most-recent window's `q5h_max` is still moving and the row count is incomplete. The most-recent qualifying COMPLETED window is held out for validation; the second-most-recent and older qualifying windows form the fit set.
+4. **Single-model windows only** — a Q5h window with rows from more than one `(model|speed)` pair is dropped from that pair's fit set. See §"Mixed-model windows" below for the load-bearing rationale.
 
-These thresholds are hard-coded for v1. Operators with sparse data who hit the "no qualifying windows" floor will see a clear error message pointing at the thresholds; they can re-run with `--by row` (until that's removed) or wait for more data.
+These thresholds are hard-coded for v1. Operators with sparse data who hit the "no qualifying windows" floor see a clear error message: *"No qualifying windows for (model|speed). Collect more data or use deprecated `--by row` for legacy comparison."*
+
+### Mixed-model windows (load-bearing)
+
+`q5h_max` is account-level — Anthropic charges Q5h against the account, not a specific model. Token columns (`cache_read`, `cache_create`, `input`, `output`) are model-scoped. A Q5h window with rows from multiple `(model|speed)` pairs cannot be cleanly attributed: the recovered per-model weights would mix model-A token counts with the account-level Q5h burn driven partly by model B.
+
+The window-mode contract groups by `q5h_reset` AND filters to windows where every row in the window shares the same `(model|speed)`. Mixed-model windows are dropped from every model's fit set. Each `(model|speed)` reports its own R², held-out error, and recovered weights independently. Operators running heavy multi-model traffic will see fewer qualifying windows per model.
+
+When a `(model|speed)` has fewer than 20 qualifying single-model windows after all filters, the output emits an "Insufficient data" warning above the numbers and labels the fit as low-confidence. The numbers are still produced (R², weights, held-out error) so operators can sanity-check trends, but the warning signals that the result should not be treated as authoritative.
 
 ### Cache-fix observer-effect labeling
 
@@ -112,13 +133,22 @@ The output line "Mode: window (N Q5h windows aggregated from M rows)" gains a th
 Mode: window (88 Q5h windows aggregated from 3530 rows, cache_fix_active)
 ```
 
-Detection signal: the aggregator scans the rows in scope. If ≥50% carry the cache-fix proxy's `_workflowAgentId` or `request_id` extension markers (i.e., evidence of having flowed through the cache-fix proxy's extension pipeline), the label is `cache_fix_active`. If <10% carry those markers, the label is omitted (meter-only operation). If between 10% and 50%, the label is `cache_fix_mixed` and the operator is warned that the regression is fitting a mixed-substrate workload.
+Detection signal: the aggregator scans the rows in scope. A row is treated as cache-fix-touched if either `agent_id` (any non-empty value) or `request_id` (any non-empty value) is present on the row. These are the actual row keys per `src/log/schema.mjs:105` (`request_id`, upstream response-id header) and `src/log/schema.mjs:115` (`agent_id`, cache-fix v4.3.0+ workflow-tool attribution). If ≥50% of rows carry either marker, the label is `cache_fix_active`. If <10% carry either marker, the label is omitted (meter-only operation). If between 10% and 50%, the label is `cache_fix_mixed` and the operator is warned that the regression is fitting a mixed-substrate workload.
 
 This is a v1 detection heuristic; the directive defers a stricter signal (specific extension-emitted flag in the JSONL) to the cache-fix repo's follow-up work. The 50%/10% thresholds are empirical and may be tuned in the implementation review.
 
 This label flows directly to the #34 weight-history ledger when that work lands; recording it now avoids backfilling the ledger later.
 
 ## Implementation surface
+
+### `bin/claude-meter.mjs`
+
+The top-level `parseArgs` call at `bin/claude-meter.mjs:16` owns flag declarations and forwards a generic `args` object to `ratesCommand`. Add two new options to that `parseArgs` config:
+
+- `by` — `{ type: "string", default: "window" }`. Accepted values: `"window"`, `"row"`. Any other value produces a parse error.
+- `tier-start-date` — `{ type: "string" }`. No default. Required when the subcommand is `rates` and `--by window` (the default mode). The dispatch path for `case "rates"` (`bin/claude-meter.mjs:107`) validates presence and format before calling `ratesCommand`; on missing/invalid, exit non-zero with: *"--tier-start-date <YYYY-MM-DD> is required for window-mode regression. Use --by row to skip the v1 window contract (deprecated; produces unreliable weights)."*
+
+Tests for this parser surface go in `test/rates-windowing.test.mjs` (see §"Tests" below) and execute against the actual `bin/claude-meter.mjs` entrypoint as a subprocess (`spawnSync`-style), not just direct `ratesCommand` calls.
 
 ### `src/log/reader.mjs`
 
@@ -128,9 +158,9 @@ Add `groupByQuotaWindow(rows)` — exported function that returns a `Map<q5h_res
 
 Refactor `ratesCommand` to dispatch on the new `--by <window|row>` flag (default `window`).
 
-- Window-mode path: read rows, filter by `--tier-start-date`, call `groupByQuotaWindow`, apply the three hard-coded filters (`q5h_max ≥ 0.10`, `rows_per_window ≥ 20`, exclude in-progress), hold out the most-recent qualifying window, fit OLS on the remainder, compute R² and held-out window prediction error.
+- Window-mode path: read rows, filter by `--tier-start-date`, call `groupByQuotaWindow`, apply the four hard-coded filters (`q5h_max ≥ 0.10`, `rows_per_window ≥ 20`, exclude in-progress, single-model windows only). For each `(model|speed)` pair: hold out the most-recent qualifying window, fit OLS on the remainder, compute R² and held-out window prediction error. If fewer than 20 qualifying windows remain for a pair, emit the "Insufficient data" warning above the numbers per §"Mixed-model windows".
 - Row-mode path: existing implementation, plus the stderr deprecation notice.
-- Cache-fix detection: scan in-scope rows for the proxy's extension markers, emit the appropriate label.
+- Cache-fix detection: scan in-scope rows for `agent_id`/`request_id` presence per §"Cache-fix observer-effect labeling", emit the appropriate label.
 
 The OLS machinery (`olsRegression`, `invertMatrix`) is reused unchanged.
 
@@ -138,16 +168,27 @@ The OLS machinery (`olsRegression`, `invertMatrix`) is reused unchanged.
 
 Add a new test file for the window-mode behavior. Tests cover:
 
-1. Window-mode default: passing the AITL fixture through `ratesCommand` recovers AITL's expected weights (cache_read=0.0262, cache_create=10.01, input=8.39, output=60.80) to within 5% tolerance and reports R² ≥ 0.70.
-2. Held-out validation: the held-out window's predicted pp matches actual pp to within 5% (AITL's sample is 2.3%; 5% is the test ceiling for fixture stability under future floating-point drift).
-3. `--by row` legacy path returns the old per-row regression output AND writes the deprecation notice to stderr.
-4. `--tier-start-date` filters rows correctly; missing flag produces a clear error message.
-5. Filter thresholds: a fixture with all windows below `q5h_max = 0.10` produces "no qualifying windows" error; a fixture with the in-progress current window present excludes it from the fit; the held-out window is the most-recent QUALIFYING window (not necessarily the literal last entry).
-6. Cache-fix label: a fixture with all rows carrying the marker emits `cache_fix_active`; with no markers emits no label; mixed (30% markers) emits `cache_fix_mixed`.
+1. **Weight recovery (AITL fixture).** Passing the anonymized 90-window fixture through the window-mode regression recovers AITL's expected weights (cache_read=0.0262, cache_create=10.01, input=8.39, output=60.80) to within 5% tolerance and reports R² ≥ 0.70. The AITL fixture is shuffled and chronology-stripped — this test validates weight recovery only, not chronology rules.
+2. **Chronology rules (synthetic fixture).** A separate small synthetic fixture (5-10 hand-crafted windows with explicit `q5h_reset` timestamps) exercises the chronology contract: in-progress current window is excluded from the fit; the held-out window is the most-recent QUALIFYING window (not necessarily the literal last entry); "qualifying" means passing all four filters from §"Other filter thresholds". Synthetic data; no real rows.
+3. **Mixed-model filter (synthetic fixture).** A synthetic fixture mixes two `(model|speed)` pairs within one window and isolates each pair in others. The mixed window is dropped from both pairs' fit sets; the isolated windows feed each pair's independent regression.
+4. **Insufficient-data warning.** A synthetic fixture with fewer than 20 qualifying single-model windows for a `(model|speed)` pair produces the "Insufficient data" warning above the numbers; numbers are still emitted.
+5. **CLI parser (subprocess against `bin/claude-meter.mjs`).** `claude-meter rates --by row` returns the legacy per-row regression output AND writes the deprecation notice to stderr; `claude-meter rates` with no `--tier-start-date` produces the required-flag error message and exits non-zero; `claude-meter rates --tier-start-date 2026-05-23` against a fixture flows through to window-mode output.
+6. **Cache-fix label.** A fixture with `agent_id` populated on ≥50% of rows emits `cache_fix_active`; with `agent_id`/`request_id` absent from all rows, no label is emitted; with `request_id` on 30% emits `cache_fix_mixed`.
 
 ### Fixture: `test/fixtures/aitl-anonymized-90-windows.json`
 
-AITL's 90-window anonymized sample. Each entry: `{ cache_read_M, cache_create_M, input_M, output_M, q5h_max }`. Codex-cleared SAFE_TO_SHIP. To be committed by AITL directly to this branch on receipt of branch name (this directive marks the agreed path).
+AITL's 90-window anonymized sample. Each entry: `{ cache_read_M, cache_create_M, input_M, output_M, q5h_max }`. Codex-cleared SAFE_TO_SHIP. Committed to this branch by AITL at 4e68a1e. Used by test #1 above only; chronology fields (q5h_reset, timestamps) intentionally absent per privacy posture.
+
+### Synthetic chronology fixture (proxy-builder-authored)
+
+Construct in-test (or as a tiny JSON file under `test/fixtures/`) — 5-10 windows with explicit `q5h_reset` ISO timestamps, hand-crafted token counts that yield trivially-known weights, deliberately including:
+- one in-progress current window (must be excluded)
+- one window with rows_per_window < 20 (must be excluded by row-count filter)
+- one window with `q5h_max < 0.10` (must be excluded by signal filter)
+- one mixed-model window (must be excluded from every `(model|speed)` pair)
+- a clear "most-recent qualifying" window distinct from the literal last entry by timestamp
+
+Tests #2, #3, #4 above run against this fixture. No real telemetry; deterministic; lives in-repo.
 
 ## Test plan
 
@@ -161,8 +202,8 @@ Beyond the unit tests above:
 ## Verification
 
 - `node --test test/rates-windowing.test.mjs test/rates-display.test.mjs` — all green.
-- Manual smoke against AITL's fixture: `node src/cli/rates.mjs --tier-start-date 2026-05-23 --fixture test/fixtures/aitl-anonymized-90-windows.json` returns the expected weights and R²/held-out values.
-- Cross-repo no-regression: nothing else depends on `rates` output today; spot-check the meter dashboard at `public/index.html` doesn't import from `src/cli/rates.mjs`.
+- Manual smoke (real installs): `claude-meter rates --tier-start-date 2026-05-23` against the operator's `~/.local/share/claude-meter/usage.jsonl` returns window-mode output. A `--fixture <path>` flag is **not** part of the v1 CLI contract; tests load the AITL fixture by direct file read inside the test harness, not via a user-facing flag.
+- Cross-repo no-regression: nothing else depends on `rates` output today; spot-check the meter dashboard at `public/index.html` and `web/src/` doesn't import from `src/cli/rates.mjs`.
 
 ## Out of scope
 
