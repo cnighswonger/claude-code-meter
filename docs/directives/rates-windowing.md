@@ -2,7 +2,7 @@
 
 **Issues:** [#33](https://github.com/cnighswonger/claude-code-meter/issues/33) (this directive) + [#34](https://github.com/cnighswonger/claude-code-meter/issues/34) (follow-up; depends on this contract)
 **Directive branch / Implementation branch:** `feature/rates-windowing` (single branch — the contract is narrow enough that the directive + implementation can ride together; see "Process" below)
-**Stage:** directive — round 2 (amended after Codex r1)
+**Stage:** directive — round 2 (Codex r2: APPROVE_WITH_NITS; nits folded as r2.1)
 **Milestone:** v0.8.1 (patch — `rates` CLI semantics change, no schema change)
 
 ## Revision history
@@ -10,12 +10,15 @@
 - **r1 → r2** (this amendment): folded Codex r1 REQUEST_CHANGES findings.
   - Added `bin/claude-meter.mjs` as a load-bearing implementation surface with explicit `parseArgs` flag declarations for `--by` and `--tier-start-date`; CLI-parser tests run as subprocess against the entrypoint, not just direct `ratesCommand` calls (Codex r1 Blocker 1).
   - Chronology rules now exercised against a separate synthetic chronology fixture; the AITL anonymized fixture remains regression-only (Codex r1 Blocker 2; AITL adjudication: option B).
-  - Mixed-model windows: defined as load-bearing — group by `q5h_reset` AND filter to single-model windows, fit per `(model|speed)`, drop mixed windows from every fit (Codex r1 Blocker 3; AITL adjudication: option C). Added insufficient-data warning when N < 20 per pair.
+  - Mixed-model windows: defined as contract-critical — group by `q5h_reset` AND filter to single-model windows, fit per `(model|speed)`, drop mixed windows from every fit (Codex r1 Blocker 3; AITL adjudication: option C). Added insufficient-data warning when N < 20 per pair.
   - Cache-fix marker detection cites the actual schema row keys (`agent_id`, `request_id`) from `src/log/schema.mjs:105`/`:115`, not `_workflowAgentId`.
   - Held-out validation language clarified to single-hold-out (was ambiguous between leave-one-out and v1's actual single hold-out).
   - Removed pseudocode `--fixture` flag from verification; tests load the AITL fixture by direct file read in the harness.
   - Sparse-data error message phrasing reframed as "collect more data or use deprecated `--by row` for legacy comparison."
   - LOC budget revised to ~200 impl + ~200 tests to account for added CLI plumbing + synthetic fixture + insufficient-data path.
+- **r2 → r2.1** (this in-place edit): folded Codex r2 APPROVE_WITH_NITS items.
+  - Subprocess parser tests now route fixture data via the existing `--log-file` global flag (forwarded by extending the `rates` dispatch to mirror `analyze`'s `logFile:` shape), eliminating Codex r2's "how does fixture data reach `bin/claude-meter.mjs`?" ambiguity.
+  - §"Mixed-model windows" section title relabeled "contract-critical" with a parenthetical clarifying that the section header does not raise the formal NFR `Load-bearing` classification (which remains "No"). Disambiguates the overloaded "load-bearing" usage Codex r2 flagged as a nit.
 
 ## Goal
 
@@ -113,11 +116,14 @@ The window-mode aggregator applies four filters before regression:
 1. **`q5h_max >= 0.10`** — windows with less than 10% Q5h consumption don't carry enough signal to constrain the fit.
 2. **`rows_per_window >= 20`** — windows with fewer than 20 rows likely represent a brief use spike or partial-window observation, not a real workload.
 3. **Excludes the in-progress current window** — the most-recent window's `q5h_max` is still moving and the row count is incomplete. The most-recent qualifying COMPLETED window is held out for validation; the second-most-recent and older qualifying windows form the fit set.
-4. **Single-model windows only** — a Q5h window with rows from more than one `(model|speed)` pair is dropped from that pair's fit set. See §"Mixed-model windows" below for the load-bearing rationale.
+4. **Single-model windows only** — a Q5h window with rows from more than one `(model|speed)` pair is dropped from that pair's fit set. See §"Mixed-model windows" below for the contract-critical rationale.
 
 These thresholds are hard-coded for v1. Operators with sparse data who hit the "no qualifying windows" floor see a clear error message: *"No qualifying windows for (model|speed). Collect more data or use deprecated `--by row` for legacy comparison."*
 
-### Mixed-model windows (load-bearing)
+### Mixed-model windows (contract-critical)
+
+> "Contract-critical" here means **must implement exactly as specified** — it does not raise the formal NFR `Load-bearing` classification above, which remains "No" (CLI-semantics-only change, no schema or wire contract change). The section title flagged this distinction for implementation reviewers per Codex r2 nit.
+
 
 `q5h_max` is account-level — Anthropic charges Q5h against the account, not a specific model. Token columns (`cache_read`, `cache_create`, `input`, `output`) are model-scoped. A Q5h window with rows from multiple `(model|speed)` pairs cannot be cleanly attributed: the recovered per-model weights would mix model-A token counts with the account-level Q5h burn driven partly by model B.
 
@@ -148,7 +154,9 @@ The top-level `parseArgs` call at `bin/claude-meter.mjs:16` owns flag declaratio
 - `by` — `{ type: "string", default: "window" }`. Accepted values: `"window"`, `"row"`. Any other value produces a parse error.
 - `tier-start-date` — `{ type: "string" }`. No default. Required when the subcommand is `rates` and `--by window` (the default mode). The dispatch path for `case "rates"` (`bin/claude-meter.mjs:107`) validates presence and format before calling `ratesCommand`; on missing/invalid, exit non-zero with: *"--tier-start-date <YYYY-MM-DD> is required for window-mode regression. Use --by row to skip the v1 window contract (deprecated; produces unreliable weights)."*
 
-Tests for this parser surface go in `test/rates-windowing.test.mjs` (see §"Tests" below) and execute against the actual `bin/claude-meter.mjs` entrypoint as a subprocess (`spawnSync`-style), not just direct `ratesCommand` calls.
+The existing `--log-file` global flag (declared at `bin/claude-meter.mjs:28`, documented at `bin/claude-meter.mjs:66`) is currently forwarded only by the `analyze` dispatch (`bin/claude-meter.mjs:122`, `logFile: values["log-file"]`). Extend the `rates` dispatch to forward it the same way (`logFile: values["log-file"]`) so subprocess tests can route fixture data through `bin/claude-meter.mjs` without inventing a new `--fixture` flag. `ratesCommand` reads the resolved log path (falling back to its existing default at `src/cli/rates.mjs:12`-`:13` when unset).
+
+Tests for this parser surface go in `test/rates-windowing.test.mjs` (see §"Tests" below) and execute against the actual `bin/claude-meter.mjs` entrypoint as a subprocess (`spawnSync`-style), not just direct `ratesCommand` calls. The accepted-flag test writes a fixture JSONL to a temp path and invokes `claude-meter rates --tier-start-date 2026-05-23 --log-file <temp>` so the parser, dispatch, and window-mode regression path are all exercised end-to-end.
 
 ### `src/log/reader.mjs`
 
