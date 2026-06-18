@@ -27,7 +27,7 @@ const { values, positionals } = parseArgs({
     fit: { type: "boolean" },
     "log-file": { type: "string" },
     // rates: window-mode regression flags
-    by: { type: "string" },
+    by: { type: "string", default: "window" },
     "tier-start-date": { type: "string" },
     // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
@@ -115,7 +115,7 @@ switch (command) {
     break;
   }
   case "rates": {
-    const by = values.by ?? "window";
+    const by = values.by;
     if (by !== "window" && by !== "row") {
       process.stderr.write(`Invalid --by value: "${by}". Accepted: window | row.\n`);
       process.exit(2);

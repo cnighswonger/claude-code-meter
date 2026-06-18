@@ -134,28 +134,31 @@ function printPair(pair, cacheFixLabel) {
   }
 
   // Build X, y from aggregated windows. y is q5h_max in percentage points (×100)
-  // so the recovered weights are pp-per-Mtok (matches the directive's example
-  // output). X columns vary by 2500x in scale (cache_read mean ~195 Mtok vs
-  // input mean ~0.08 Mtok); without column scaling the Gauss-Jordan inversion
-  // accumulates enough roundoff on the small columns that the input weight
-  // drifts ~25% from a LAPACK reference. Scale each column by its mean before
-  // fitting, then back-scale the weights.
+  // and X columns are token counts in millions, so recovered weights are
+  // pp-per-Mtok — matches the directive's example output. Column means can
+  // span ~2500x (cache_read mean ~195 Mtok vs input mean ~0.08 Mtok on real
+  // logs); we mean-scale columns before the Gauss-Jordan inversion so the
+  // condition number stays bounded when one column has near-constant tiny
+  // values relative to the others. This rescaling is mathematically
+  // equivalent to solving on the raw columns and is invariant on
+  // well-conditioned matrices like the AITL fixture, but it prevents
+  // singular-matrix failures on degenerate-but-valid synthetic inputs.
   const rawX = fitWindows.map((w) => aggregateTokens(w.rows));
   const y = fitWindows.map((w) => w.q5h_max * 100);
 
   const colMeans = rawX[0].map((_, j) => rawX.reduce((s, row) => s + row[j], 0) / rawX.length);
   const safeMeans = colMeans.map((m) => (m === 0 ? 1 : m));
-  const X = rawX.map((row) => row.map((x, j) => x / safeMeans[j]));
+  const scaledX = rawX.map((row) => row.map((x, j) => x / safeMeans[j]));
 
-  const scaledWeights = olsRegression(X, y);
+  const scaledWeights = olsRegression(scaledX, y);
   if (!scaledWeights) {
     console.log("  Regression failed (singular matrix).");
     return;
   }
   const weights = scaledWeights.map((w, j) => w / safeMeans[j]);
 
-  // R-squared on the fit set (use rawX with back-scaled weights, equivalent to
-  // scaled X with scaledWeights — both are pp).
+  // R-squared on the fit set (use raw X with back-scaled weights — equivalent
+  // to scaled X with scaledWeights).
   const yMean = y.reduce((a, b) => a + b, 0) / y.length;
   let ssTot = 0;
   let ssRes = 0;
@@ -201,7 +204,7 @@ function printPair(pair, cacheFixLabel) {
     console.log(`    Cache Write    ${(known.cache_write / knownInput).toFixed(3)}`);
   }
 
-  console.log(`\n  Raw weights (quota fraction per token):`);
+  console.log(`\n  Raw weights (q5h percentage points per Mtok):`);
   for (let i = 0; i < 4; i++) {
     console.log(`    ${labels[i].padEnd(14)} ${weights[i].toExponential(4)}`);
   }

@@ -128,20 +128,35 @@ test("chronology: in-progress current window is excluded from every fit", () => 
 test("chronology: held-out is the most-recent qualifying window (not necessarily the literal last)", () => {
   // 5 qualifying windows + 1 in-progress (excluded) + 1 sub-threshold window
   // with q5h_max=0.05 (excluded by filter, sits between resets 3000 and 5000).
+  // The most-recent qualifying window is reset=6000 with q5h_max=0.7. The
+  // implementation must hold THAT out, not the literal last entry
+  // (reset=9999, the in-progress window) and not reset=3500 (the
+  // sub-threshold one that got filtered). The held-out-actual-pp printed line
+  // tells us which window the implementation actually picked. Token mixes
+  // vary per window so the design matrix has rank 4 (single-row fits would
+  // be singular).
+  // Vary all four token columns independently so the 4-param fit has rank 4.
+  const mk = (reset, q5h, in_, out_, cr, cc) =>
+    makeWindow(reset, 25, { q5h, input: in_, output: out_, cache_read: cr, cache_create: cc });
   const rows = [
-    ...makeWindow(1000, 25, { q5h: 0.5 }),
-    ...makeWindow(2000, 25, { q5h: 0.6 }),
-    ...makeWindow(3000, 25, { q5h: 0.4 }),
-    ...makeWindow(3500, 25, { q5h: 0.05 }), // SUB-q5h-threshold: excluded
-    ...makeWindow(5000, 25, { q5h: 0.55 }),
-    ...makeWindow(6000, 25, { q5h: 0.7 }), // most-recent qualifying — must be hold-out
-    ...makeWindow(9999, 25, { q5h: 0.3 }), // in-progress: excluded
+    ...mk(1000, 0.5, 1000, 1500, 10_000, 1100),
+    ...mk(2000, 0.6, 1500, 1200, 12_000, 1300),
+    ...mk(3000, 0.4, 800, 1800, 8_000, 900),
+    ...mk(3500, 0.05, 100, 200, 1_000, 100), // SUB-q5h-threshold: excluded
+    ...mk(5000, 0.55, 1200, 1700, 11_000, 1200),
+    ...mk(6000, 0.7, 1800, 1100, 14_000, 1500), // most-recent qualifying — must be hold-out
+    ...mk(9999, 0.3, 600, 1300, 5_000, 700), // in-progress: excluded
   ];
   const out = captureRatesOutput(rows, "2026-05-23");
-  // 5 qualifying = 4 fit + 1 hold-out. Confirm the warning is NOT printed
-  // (5 < 20 → insufficient-data warning fires; that's an expected separate
-  // signal).
+  // 5 qualifying = 4 fit + 1 hold-out.
   assert.match(out.stdout, /Mode: window \(5 Q5h windows aggregated from \d+ rows\)/);
+  // The "actual" pp in the held-out line must be the reset=6000 window's
+  // q5h_max × 100 = 70.0 pp, NOT the in-progress reset=9999 window's 30.0 pp
+  // and NOT the sub-threshold reset=3500 window's 5.0 pp. If the
+  // implementation ever held out a different window, the actual would change.
+  assert.match(out.stdout, /Held-out window error: .* vs actual 70\.0 pp/);
+  assert.doesNotMatch(out.stdout, /vs actual 30\.0 pp/);
+  assert.doesNotMatch(out.stdout, /vs actual 5\.0 pp/);
 });
 
 // ─── 3. Mixed-model filter on a synthetic fixture ────────────────────────
