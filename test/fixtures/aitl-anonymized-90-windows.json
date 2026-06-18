@@ -1,0 +1,638 @@
+{
+  "schema_version": 1,
+  "tier": "max-2x",
+  "model": "claude-opus-4-7",
+  "source": "anonymized aggregate fixture for regression testing",
+  "windows": [
+    {
+      "cache_read_M": 244.0958,
+      "cache_create_M": 3.7323,
+      "input_M": 0.073324,
+      "output_M": 0.368855,
+      "q5h_max": 0.93
+    },
+    {
+      "cache_read_M": 76.1678,
+      "cache_create_M": 0.8088,
+      "input_M": 0.060979,
+      "output_M": 0.216846,
+      "q5h_max": 0.25
+    },
+    {
+      "cache_read_M": 169.9117,
+      "cache_create_M": 1.1081,
+      "input_M": 0.090427,
+      "output_M": 0.217997,
+      "q5h_max": 0.47
+    },
+    {
+      "cache_read_M": 249.7765,
+      "cache_create_M": 0.5515,
+      "input_M": 0.100974,
+      "output_M": 0.198603,
+      "q5h_max": 0.22
+    },
+    {
+      "cache_read_M": 20.7641,
+      "cache_create_M": 0.267,
+      "input_M": 0.010435,
+      "output_M": 0.053687,
+      "q5h_max": 0.11
+    },
+    {
+      "cache_read_M": 235.0247,
+      "cache_create_M": 1.5956,
+      "input_M": 0.104636,
+      "output_M": 0.368668,
+      "q5h_max": 0.73
+    },
+    {
+      "cache_read_M": 217.1922,
+      "cache_create_M": 3.5816,
+      "input_M": 0.04405,
+      "output_M": 0.360712,
+      "q5h_max": 0.64
+    },
+    {
+      "cache_read_M": 176.1407,
+      "cache_create_M": 1.745,
+      "input_M": 0.058441,
+      "output_M": 0.118557,
+      "q5h_max": 0.24
+    },
+    {
+      "cache_read_M": 324.4426,
+      "cache_create_M": 0.5997,
+      "input_M": 0.05316,
+      "output_M": 0.27717,
+      "q5h_max": 0.33
+    },
+    {
+      "cache_read_M": 237.8658,
+      "cache_create_M": 4.2872,
+      "input_M": 0.063215,
+      "output_M": 0.206896,
+      "q5h_max": 0.55
+    },
+    {
+      "cache_read_M": 181.8813,
+      "cache_create_M": 6.1575,
+      "input_M": 0.041192,
+      "output_M": 0.243363,
+      "q5h_max": 0.71
+    },
+    {
+      "cache_read_M": 223.2222,
+      "cache_create_M": 0.8284,
+      "input_M": 0.054557,
+      "output_M": 0.392693,
+      "q5h_max": 0.35
+    },
+    {
+      "cache_read_M": 89.0944,
+      "cache_create_M": 0.7958,
+      "input_M": 0.077716,
+      "output_M": 0.140082,
+      "q5h_max": 0.37
+    },
+    {
+      "cache_read_M": 210.2311,
+      "cache_create_M": 2.557,
+      "input_M": 0.051175,
+      "output_M": 0.699369,
+      "q5h_max": 0.89
+    },
+    {
+      "cache_read_M": 156.5487,
+      "cache_create_M": 1.2859,
+      "input_M": 0.119355,
+      "output_M": 0.19493,
+      "q5h_max": 0.74
+    },
+    {
+      "cache_read_M": 171.8481,
+      "cache_create_M": 5.0897,
+      "input_M": 0.007537,
+      "output_M": 0.329912,
+      "q5h_max": 0.92
+    },
+    {
+      "cache_read_M": 325.741,
+      "cache_create_M": 1.0127,
+      "input_M": 0.052091,
+      "output_M": 0.35673,
+      "q5h_max": 0.51
+    },
+    {
+      "cache_read_M": 105.8652,
+      "cache_create_M": 0.3409,
+      "input_M": 0.0805,
+      "output_M": 0.095015,
+      "q5h_max": 0.2
+    },
+    {
+      "cache_read_M": 52.0897,
+      "cache_create_M": 1.2063,
+      "input_M": 0.000471,
+      "output_M": 0.062429,
+      "q5h_max": 0.15
+    },
+    {
+      "cache_read_M": 30.6076,
+      "cache_create_M": 0.0646,
+      "input_M": 0.005132,
+      "output_M": 0.023814,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 120.0749,
+      "cache_create_M": 1.176,
+      "input_M": 0.005062,
+      "output_M": 0.267791,
+      "q5h_max": 0.27
+    },
+    {
+      "cache_read_M": 232.373,
+      "cache_create_M": 4.4464,
+      "input_M": 0.338763,
+      "output_M": 0.401247,
+      "q5h_max": 0.62
+    },
+    {
+      "cache_read_M": 104.5547,
+      "cache_create_M": 0.9673,
+      "input_M": 0.042854,
+      "output_M": 0.049941,
+      "q5h_max": 0.12
+    },
+    {
+      "cache_read_M": 172.3886,
+      "cache_create_M": 1.6874,
+      "input_M": 0.03655,
+      "output_M": 0.352977,
+      "q5h_max": 0.66
+    },
+    {
+      "cache_read_M": 494.6613,
+      "cache_create_M": 2.373,
+      "input_M": 0.11723,
+      "output_M": 0.324773,
+      "q5h_max": 0.54
+    },
+    {
+      "cache_read_M": 43.0638,
+      "cache_create_M": 2.0185,
+      "input_M": 0.044495,
+      "output_M": 0.257599,
+      "q5h_max": 0.4
+    },
+    {
+      "cache_read_M": 186.5572,
+      "cache_create_M": 0.386,
+      "input_M": 0.055357,
+      "output_M": 0.152734,
+      "q5h_max": 0.38
+    },
+    {
+      "cache_read_M": 277.1106,
+      "cache_create_M": 3.2973,
+      "input_M": 0.080543,
+      "output_M": 0.476159,
+      "q5h_max": 1
+    },
+    {
+      "cache_read_M": 121.9072,
+      "cache_create_M": 0.9239,
+      "input_M": 0.049185,
+      "output_M": 0.068945,
+      "q5h_max": 0.13
+    },
+    {
+      "cache_read_M": 151.455,
+      "cache_create_M": 3.4389,
+      "input_M": 0.035289,
+      "output_M": 0.17981,
+      "q5h_max": 0.61
+    },
+    {
+      "cache_read_M": 319.1159,
+      "cache_create_M": 2.5573,
+      "input_M": 0.060436,
+      "output_M": 0.503609,
+      "q5h_max": 1
+    },
+    {
+      "cache_read_M": 105.4519,
+      "cache_create_M": 0.1607,
+      "input_M": 0.02743,
+      "output_M": 0.05555,
+      "q5h_max": 0.23
+    },
+    {
+      "cache_read_M": 301.4302,
+      "cache_create_M": 4.6979,
+      "input_M": 0.146378,
+      "output_M": 0.353185,
+      "q5h_max": 0.95
+    },
+    {
+      "cache_read_M": 357.6545,
+      "cache_create_M": 5.1404,
+      "input_M": 0.41533,
+      "output_M": 0.720602,
+      "q5h_max": 0.96
+    },
+    {
+      "cache_read_M": 330.8541,
+      "cache_create_M": 1.2841,
+      "input_M": 0.06462,
+      "output_M": 0.49649,
+      "q5h_max": 0.46
+    },
+    {
+      "cache_read_M": 167.4678,
+      "cache_create_M": 0.4116,
+      "input_M": 0.045773,
+      "output_M": 0.115396,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 297.4537,
+      "cache_create_M": 1.5389,
+      "input_M": 0.127323,
+      "output_M": 0.589691,
+      "q5h_max": 0.62
+    },
+    {
+      "cache_read_M": 425.7077,
+      "cache_create_M": 3.5087,
+      "input_M": 0.080746,
+      "output_M": 0.587068,
+      "q5h_max": 0.83
+    },
+    {
+      "cache_read_M": 216.7208,
+      "cache_create_M": 1.2197,
+      "input_M": 0.051429,
+      "output_M": 0.226391,
+      "q5h_max": 0.22
+    },
+    {
+      "cache_read_M": 119.8778,
+      "cache_create_M": 0.4683,
+      "input_M": 0.039196,
+      "output_M": 0.098799,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 399.0375,
+      "cache_create_M": 1.5837,
+      "input_M": 0.127181,
+      "output_M": 0.451638,
+      "q5h_max": 0.71
+    },
+    {
+      "cache_read_M": 64.1523,
+      "cache_create_M": 0.1013,
+      "input_M": 0.072814,
+      "output_M": 0.034749,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 82.6681,
+      "cache_create_M": 2.1002,
+      "input_M": 0.006677,
+      "output_M": 0.117531,
+      "q5h_max": 0.31
+    },
+    {
+      "cache_read_M": 128.2361,
+      "cache_create_M": 2.2933,
+      "input_M": 0.119417,
+      "output_M": 0.302738,
+      "q5h_max": 0.47
+    },
+    {
+      "cache_read_M": 230.4037,
+      "cache_create_M": 1.9366,
+      "input_M": 0.054367,
+      "output_M": 0.126449,
+      "q5h_max": 0.26
+    },
+    {
+      "cache_read_M": 94.7336,
+      "cache_create_M": 1.9073,
+      "input_M": 0.063771,
+      "output_M": 0.131184,
+      "q5h_max": 0.34
+    },
+    {
+      "cache_read_M": 100.4146,
+      "cache_create_M": 0.4753,
+      "input_M": 0.192374,
+      "output_M": 0.13688,
+      "q5h_max": 0.17
+    },
+    {
+      "cache_read_M": 237.6906,
+      "cache_create_M": 1.1144,
+      "input_M": 0.048951,
+      "output_M": 0.386674,
+      "q5h_max": 0.42
+    },
+    {
+      "cache_read_M": 134.243,
+      "cache_create_M": 1.6536,
+      "input_M": 0.024959,
+      "output_M": 0.139032,
+      "q5h_max": 0.24
+    },
+    {
+      "cache_read_M": 93.872,
+      "cache_create_M": 0.3893,
+      "input_M": 0.005325,
+      "output_M": 0.0819,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 338.908,
+      "cache_create_M": 1.4409,
+      "input_M": 0.063338,
+      "output_M": 0.680744,
+      "q5h_max": 0.49
+    },
+    {
+      "cache_read_M": 118.9013,
+      "cache_create_M": 0.7577,
+      "input_M": 0.059123,
+      "output_M": 0.114716,
+      "q5h_max": 0.13
+    },
+    {
+      "cache_read_M": 239.7818,
+      "cache_create_M": 2.9617,
+      "input_M": 0.067015,
+      "output_M": 0.376513,
+      "q5h_max": 0.45
+    },
+    {
+      "cache_read_M": 145.903,
+      "cache_create_M": 0.6025,
+      "input_M": 0.072626,
+      "output_M": 0.190191,
+      "q5h_max": 0.21
+    },
+    {
+      "cache_read_M": 158.8925,
+      "cache_create_M": 1.3746,
+      "input_M": 0.110344,
+      "output_M": 0.188449,
+      "q5h_max": 0.29
+    },
+    {
+      "cache_read_M": 78.7321,
+      "cache_create_M": 0.3221,
+      "input_M": 0.029329,
+      "output_M": 0.053887,
+      "q5h_max": 0.13
+    },
+    {
+      "cache_read_M": 136.8208,
+      "cache_create_M": 2.8744,
+      "input_M": 1.18469,
+      "output_M": 0.188891,
+      "q5h_max": 0.49
+    },
+    {
+      "cache_read_M": 149.811,
+      "cache_create_M": 2.8654,
+      "input_M": 0.050269,
+      "output_M": 0.186346,
+      "q5h_max": 0.35
+    },
+    {
+      "cache_read_M": 76.134,
+      "cache_create_M": 1.6129,
+      "input_M": 0.077215,
+      "output_M": 0.368925,
+      "q5h_max": 0.57
+    },
+    {
+      "cache_read_M": 155.7372,
+      "cache_create_M": 2.1,
+      "input_M": 0.069993,
+      "output_M": 0.354348,
+      "q5h_max": 0.39
+    },
+    {
+      "cache_read_M": 256.316,
+      "cache_create_M": 2.2646,
+      "input_M": 0.052134,
+      "output_M": 0.66622,
+      "q5h_max": 0.53
+    },
+    {
+      "cache_read_M": 253.8298,
+      "cache_create_M": 0.6632,
+      "input_M": 0.065734,
+      "output_M": 0.225613,
+      "q5h_max": 0.22
+    },
+    {
+      "cache_read_M": 361.0767,
+      "cache_create_M": 6.7521,
+      "input_M": 0.04619,
+      "output_M": 0.352073,
+      "q5h_max": 0.97
+    },
+    {
+      "cache_read_M": 63.8033,
+      "cache_create_M": 0.2983,
+      "input_M": 0.016977,
+      "output_M": 0.162894,
+      "q5h_max": 0.13
+    },
+    {
+      "cache_read_M": 315.6818,
+      "cache_create_M": 2.0792,
+      "input_M": 0.082486,
+      "output_M": 0.608189,
+      "q5h_max": 0.17
+    },
+    {
+      "cache_read_M": 84.0184,
+      "cache_create_M": 0.908,
+      "input_M": 0.032124,
+      "output_M": 0.030508,
+      "q5h_max": 0.1
+    },
+    {
+      "cache_read_M": 154.6149,
+      "cache_create_M": 1.6078,
+      "input_M": 0.035641,
+      "output_M": 0.1593,
+      "q5h_max": 0.28
+    },
+    {
+      "cache_read_M": 267.1315,
+      "cache_create_M": 1.8213,
+      "input_M": 0.08273,
+      "output_M": 0.397958,
+      "q5h_max": 0.5
+    },
+    {
+      "cache_read_M": 266.2248,
+      "cache_create_M": 0.7867,
+      "input_M": 0.052816,
+      "output_M": 0.242485,
+      "q5h_max": 0.24
+    },
+    {
+      "cache_read_M": 222.3733,
+      "cache_create_M": 0.8819,
+      "input_M": 0.09412,
+      "output_M": 0.17097,
+      "q5h_max": 0.19
+    },
+    {
+      "cache_read_M": 117.2685,
+      "cache_create_M": 2.6219,
+      "input_M": 0.050069,
+      "output_M": 0.062155,
+      "q5h_max": 0.27
+    },
+    {
+      "cache_read_M": 260.7129,
+      "cache_create_M": 1.2361,
+      "input_M": 0.053763,
+      "output_M": 0.269644,
+      "q5h_max": 0.28
+    },
+    {
+      "cache_read_M": 155.1369,
+      "cache_create_M": 1.3281,
+      "input_M": 0.068597,
+      "output_M": 0.278718,
+      "q5h_max": 0.45
+    },
+    {
+      "cache_read_M": 110.3832,
+      "cache_create_M": 0.7128,
+      "input_M": 0.050689,
+      "output_M": 0.058514,
+      "q5h_max": 0.11
+    },
+    {
+      "cache_read_M": 245.9224,
+      "cache_create_M": 1.0224,
+      "input_M": 0.067909,
+      "output_M": 0.211685,
+      "q5h_max": 0.24
+    },
+    {
+      "cache_read_M": 195.2428,
+      "cache_create_M": 1.5717,
+      "input_M": 0.092656,
+      "output_M": 0.333708,
+      "q5h_max": 0.32
+    },
+    {
+      "cache_read_M": 344.0034,
+      "cache_create_M": 6.7239,
+      "input_M": 0.059867,
+      "output_M": 0.67898,
+      "q5h_max": 0.98
+    },
+    {
+      "cache_read_M": 203.9971,
+      "cache_create_M": 1.0291,
+      "input_M": 0.116283,
+      "output_M": 0.298853,
+      "q5h_max": 0.34
+    },
+    {
+      "cache_read_M": 128.8541,
+      "cache_create_M": 2.9027,
+      "input_M": 0.018354,
+      "output_M": 0.173834,
+      "q5h_max": 0.38
+    },
+    {
+      "cache_read_M": 597.9806,
+      "cache_create_M": 1.4025,
+      "input_M": 0.092301,
+      "output_M": 0.602386,
+      "q5h_max": 0.53
+    },
+    {
+      "cache_read_M": 123.1836,
+      "cache_create_M": 0.8458,
+      "input_M": 0.05188,
+      "output_M": 0.286287,
+      "q5h_max": 0.32
+    },
+    {
+      "cache_read_M": 255.5844,
+      "cache_create_M": 1.365,
+      "input_M": 0.09559,
+      "output_M": 0.35806,
+      "q5h_max": 0.71
+    },
+    {
+      "cache_read_M": 137.6341,
+      "cache_create_M": 0.9613,
+      "input_M": 0.038379,
+      "output_M": 0.143179,
+      "q5h_max": 0.21
+    },
+    {
+      "cache_read_M": 73.1998,
+      "cache_create_M": 2.3619,
+      "input_M": 0.032277,
+      "output_M": 0.075732,
+      "q5h_max": 0.48
+    },
+    {
+      "cache_read_M": 113.19,
+      "cache_create_M": 1.2044,
+      "input_M": 0.081353,
+      "output_M": 0.171385,
+      "q5h_max": 0.23
+    },
+    {
+      "cache_read_M": 183.8129,
+      "cache_create_M": 2.3813,
+      "input_M": 0.088921,
+      "output_M": 0.183751,
+      "q5h_max": 0.34
+    },
+    {
+      "cache_read_M": 277.8427,
+      "cache_create_M": 1.9276,
+      "input_M": 0.074041,
+      "output_M": 0.373795,
+      "q5h_max": 0.44
+    },
+    {
+      "cache_read_M": 120.0531,
+      "cache_create_M": 0.2418,
+      "input_M": 0.086684,
+      "output_M": 0.11566,
+      "q5h_max": 0.12
+    },
+    {
+      "cache_read_M": 219.7085,
+      "cache_create_M": 0.5455,
+      "input_M": 0.05404,
+      "output_M": 0.24844,
+      "q5h_max": 0.25
+    },
+    {
+      "cache_read_M": 261.6349,
+      "cache_create_M": 4.7269,
+      "input_M": 0.113159,
+      "output_M": 0.575763,
+      "q5h_max": 0.71
+    }
+  ]
+}
