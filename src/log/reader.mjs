@@ -60,6 +60,29 @@ export function filterByQuotaWindow(rows) {
 }
 
 /**
+ * Group rows into all Q5h windows by `q5h_reset`. Returns a Map keyed by
+ * q5h_reset, with each entry carrying the rows and the max observed q5h in
+ * the window (the cumulative quota fraction consumed in that window).
+ *
+ * Distinct from `filterByQuotaWindow` which returns only the largest single
+ * window. The per-window aggregator at the regression layer needs ALL
+ * windows to apply filters, hold-out, and per-(model|speed) grouping.
+ */
+export function groupByQuotaWindow(rows) {
+  const windows = new Map();
+  for (const r of rows) {
+    if (r.q5h_reset === undefined || r.q5h_reset === null) continue;
+    if (!windows.has(r.q5h_reset)) {
+      windows.set(r.q5h_reset, { q5h_reset: r.q5h_reset, rows: [], q5h_max: 0 });
+    }
+    const w = windows.get(r.q5h_reset);
+    w.rows.push(r);
+    if (typeof r.q5h === "number" && r.q5h > w.q5h_max) w.q5h_max = r.q5h;
+  }
+  return windows;
+}
+
+/**
  * Group rows by date (YYYY-MM-DD).
  */
 export function groupByDate(rows) {

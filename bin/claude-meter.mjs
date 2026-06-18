@@ -26,6 +26,9 @@ const { values, positionals } = parseArgs({
     share: { type: "boolean" },
     fit: { type: "boolean" },
     "log-file": { type: "string" },
+    // rates: window-mode regression flags
+    by: { type: "string" },
+    "tier-start-date": { type: "string" },
     // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
     "per-session": { type: "boolean" },
@@ -64,6 +67,13 @@ Options:
   -c, --community     Use community dataset for rates
   --share             Include share preview with analyze output
   --log-file <path>   Path to claude-meter.jsonl (default: ~/.claude/claude-meter.jsonl)
+
+  rates-only flags:
+  --by <window|row>   Regression granularity (default: window). --by row is
+                      deprecated and produces unreliable weights.
+  --tier-start-date <YYYY-MM-DD>  Required for --by window. Filters rows to
+                      ts >= date so the fit stays within a single (model, tier)
+                      regime. See https://github.com/cnighswonger/claude-code-meter/issues/33
 
   analyze-only flags:
   --by-plan           Per-tier amortized L(t) (cost / (sub_price * calendar_days))
@@ -105,8 +115,28 @@ switch (command) {
     break;
   }
   case "rates": {
+    const by = values.by ?? "window";
+    if (by !== "window" && by !== "row") {
+      process.stderr.write(`Invalid --by value: "${by}". Accepted: window | row.\n`);
+      process.exit(2);
+    }
+    if (by === "window") {
+      const tsd = values["tier-start-date"];
+      if (!tsd || !/^\d{4}-\d{2}-\d{2}$/.test(tsd)) {
+        process.stderr.write(
+          "--tier-start-date <YYYY-MM-DD> is required for window-mode regression. " +
+            "Use --by row to skip the v1 window contract (deprecated; produces unreliable weights).\n",
+        );
+        process.exit(2);
+      }
+    }
     const { ratesCommand } = await import("../src/cli/rates.mjs");
-    ratesCommand(args);
+    ratesCommand({
+      ...args,
+      logFile: values["log-file"],
+      by,
+      "tier-start-date": values["tier-start-date"],
+    });
     break;
   }
   case "share": {
