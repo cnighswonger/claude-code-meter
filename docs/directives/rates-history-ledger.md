@@ -3,8 +3,21 @@
 **Issues:** [#34](https://github.com/cnighswonger/claude-code-meter/issues/34)
 **Parent branch:** `feature/rates-history-ledger` (master)
 **Sub-branches (one per phase):** `feature/rates-history-ledger-phase{1,2,3,4}` — each merges back into the parent via its own PR; the parent merges to `main` once all four phases land.
-**Stage:** directive — round 1
+**Stage:** directive — round 2 (Codex r1 REQUEST_CHANGES folded; awaiting r2)
 **Milestone:** v0.8.2 (phase 1 + 2 + 3) and v0.9.0 (phase 4, contemporaneous with the `--by row` removal)
+
+## Revision history
+
+- **r1 → r2** (this amendment): folded Codex r1 REQUEST_CHANGES findings.
+  - **Blocker 1 — wrong storage root.** Directive said `~/.local/share/claude-meter/` but `src/constants.mjs:20` defines `CLAUDE_DIR = ~/.claude` as the canonical root. Switched ledger to `~/.claude/claude-meter-history.json` (next to the existing `claude-meter-config.json` and `claude-meter.jsonl`); switched drift-dismiss state to `~/.claude/claude-meter-drift-seen` for the same reason. No migration needed — no pre-existing files at the wrong path.
+  - **Blocker 2 — phase 4 referenced non-existent `consent.json`.** Replaced with the actual `CONFIG_FILE` (`~/.claude/claude-meter-config.json`) that `src/consent.mjs` reads via `readConfig`/`writeConfig`. Phase 4 extends the config record with `weights_share_enabled: boolean`. Auth uses the existing `consent_token` field already returned by `getConsentStatus()`, same path that `src/cli/analyze.mjs` already uses when posting to `/api/v1/submit`. No new auth surface.
+  - **Blocker 3 — non-existent `--tier` flag.** Replaced with the existing `--plan` flag (`bin/claude-meter.mjs:22`, accepts `pro`/`max-5x`/`max-20x`/`api`/`unknown`). The ledger's `tier` field is populated from `args.plan` (or `"unknown"` if absent). `--plan` is required for `--refit` and any scheduled refit.
+  - **AI #1 — phase 3 behavioral change.** Added explicit "Auto-refit ran" output line. Defined which `rates` invocations are subject to the cadence gate (only the default window-mode path; `--history`, `--dismiss-drift`, `--refit`, `--skip-scheduled-refit` are excluded).
+  - **AI #2 — drift-dismiss state semantics.** Clarified that the default `rates` path always recomputes drift from the ledger (most-recent fit vs prior same-`(tier, model, speed)` fit) on every invocation; `last-drift-seen` only suppresses the banner if its timestamp matches the most-recent drifted fit's `fit_at`. A subsequent non-drift fit means no banner regardless of the dotfile.
+  - **AI #3 — `schema_version` reader behavior.** Added explicit reader semantics: missing `schema_version` treated as `1`; values > 1 cause `readLedger` to throw a clear error; phase 1 tests gain a case for both.
+  - **AI #4 — phase 4 minimum wire-contract lock.** Master directive now lists the minimum the phase-4 directive PR must lock: consent/auth fields, dedup/idempotency key, max payload size, server error handling, and whether `fits` is full-history or delta-only.
+  - **AI #5 — new module rule.** Aligned the maintainability section with the phase-4 surface: a new `src/cli/weights-share.mjs` is the chosen path; rationale is that `src/cli/share.mjs` posts to `/api/v1/submit` (analyze rows) while weights are a distinct endpoint and payload shape. Inlining would entangle two endpoints in one module.
+  - **Nit #1 — display vs storage vocabulary.** Added an explicit mapping table: storage key `cache_create` ↔ row field `cache_creation_input_tokens` ↔ display label `Cache Write`.
 
 ## Goal
 
@@ -41,7 +54,7 @@ Per-row regression (#33's pre-state) didn't recover usable weights, so per-row h
   - Master total: ~270 LOC impl + ~280 LOC tests. Reviewers should flag if any single phase drifts materially past 2× its phase budget.
 
 - **Threat model:**
-  - **Phase 1.** New on-disk surface at `~/.local/share/claude-meter/weights-history.json`. Append-only JSON file under the existing meter data directory. No credentials, no API keys, no PII. Same threat profile as the existing `claude-meter.jsonl`. Mode `0644` matches the existing meter data files; the file contains only aggregated tier-level fit summaries with no per-call data.
+  - **Phase 1.** New on-disk surface at `~/.claude/claude-meter-history.json` (under the existing `CLAUDE_DIR` root defined at `src/constants.mjs:20`, alongside `claude-meter-config.json` and `claude-meter.jsonl`). Append-only JSON file. No credentials, no API keys, no PII. Same threat profile as the existing `claude-meter.jsonl`. Mode `0644` matches the existing meter data files; the file contains only aggregated tier-level fit summaries with no per-call data.
   - **Phase 2.** No new on-disk surface beyond phase 1; drift detection is a pure comparison between consecutive ledger entries.
   - **Phase 3.** No new on-disk surface; cadence state is derived from the ledger's most-recent `fit_at` timestamp.
   - **Phase 4.** New wire-format contract — `POST /api/v1/weights` schema. Reuses the existing `share` consent gate (operators who haven't run `claude-meter consent` cannot submit). No new credentials; reuses the existing meter API endpoint auth. The phase-4 directive PR will spell out the exact wire contract and any operator-attestation language required.
@@ -50,8 +63,8 @@ Per-row regression (#33's pre-state) didn't recover usable weights, so per-row h
   - **No new abstractions** beyond what the contract requires. The ledger is one new module (`src/cli/weights-ledger.mjs`) with read/write/append/diff helpers. No new "service layer" or framework.
   - The drift-warning print path piggybacks on the existing `rates` output path; no new "warning subsystem."
   - The scheduled-refit gate reads ledger state directly; no new "scheduler" or "cron-like" subsystem.
-  - Phases 1–3 stay confined to `src/cli/rates.mjs`, `src/cli/weights-ledger.mjs` (new), `bin/claude-meter.mjs`, and their tests. No changes to schema, share, or server modules.
-  - Phase 4 adds one method to `src/cli/share.mjs` (or a sibling `src/cli/weights-share.mjs` if the share module gets too crowded — implementation judgment).
+  - Phases 1–3 stay confined to `src/cli/rates.mjs`, `src/cli/weights-ledger.mjs` (new), `bin/claude-meter.mjs`, `src/constants.mjs` (two new path constants), and their tests. No changes to schema, share, or server modules.
+  - Phase 4 adds `src/cli/weights-share.mjs` (new) — separate from `src/cli/share.mjs` because the existing share module posts to `/api/v1/submit` (analyze rows) and the weights endpoint is `/api/v1/weights` with a distinct payload shape. Inlining would entangle two endpoints' wire contracts in one module. Phase 4 also extends `src/consent.mjs` with helpers to read/write the new `weights_share_enabled` config field.
 
 - **Performance/reliability:** the ledger is bounded by one fit per `(tier, model)` per refit cadence — order of dozens of entries per year per operator. JSON read/write is O(file size), which stays under 100KB indefinitely. No perf concerns.
 
@@ -66,7 +79,20 @@ Land the durable storage substrate. After phase 1, an operator who runs `claude-
 
 ### Ledger file format
 
-Path: `~/.local/share/claude-meter/weights-history.json` (under the existing meter data root from `src/constants.mjs`).
+Path: `~/.claude/claude-meter-history.json` (under the existing `CLAUDE_DIR` from `src/constants.mjs:20`, next to `claude-meter-config.json` and `claude-meter.jsonl`). Add as `HISTORY_FILE` export in `src/constants.mjs`.
+
+### Storage / display / row-field key mapping
+
+The ledger uses storage keys distinct from the existing display labels and JSONL row fields, so reviewers and downstream tools see one explicit table:
+
+| Storage key (ledger) | JSONL row field (`src/log/schema.mjs`) | Display label (`src/cli/rates.mjs`) |
+|---|---|---|
+| `input` | `input_tokens` | `Input` |
+| `output` | `output_tokens` | `Output` |
+| `cache_read` | `cache_read_input_tokens` | `Cache Read` |
+| `cache_create` | `cache_creation_input_tokens` | `Cache Write` |
+
+Storage keys are the SI-style short form to keep the ledger compact and stable across CLI-display refactors.
 
 Shape (one operator, multiple fits over time):
 
@@ -105,11 +131,15 @@ The `fits` array is append-only — never edit or delete existing entries. New f
 
 ### CLI surface (phase 1)
 
-- **`claude-meter rates --refit`** — runs window-mode regression on the current log (using the operator's already-supplied `--tier-start-date` and the existing `--tier` flag), then appends the result to the ledger. Prints the fit summary to stdout. Idempotent in the trivial sense: re-running immediately produces a near-identical fit and appends another entry (no de-duplication in v1 — operators who want to keep the ledger lean either don't re-run unnecessarily or use phase 3's scheduled cadence).
+- **`claude-meter rates --refit`** — runs window-mode regression on the current log (using the operator's already-supplied `--tier-start-date` and the existing `--plan` flag at `bin/claude-meter.mjs:22`), then appends the result to the ledger. Prints the fit summary to stdout. Idempotent in the trivial sense: re-running immediately produces a near-identical fit and appends another entry (no de-duplication in v1 — operators who want to keep the ledger lean either don't re-run unnecessarily or use phase 3's scheduled cadence).
 
-- **`claude-meter rates --history`** — prints all entries from the ledger, most-recent first, formatted as a table. Filter flags `--model <name>` and `--tier <name>` narrow the output but do not modify the ledger.
+- **`claude-meter rates --history`** — prints all entries from the ledger, most-recent first, formatted as a table. Filter flags `--model <name>` and `--plan <tier>` narrow the output but do not modify the ledger.
 
-- **`--tier-start-date`** remains required for `--refit` (same contract as window-mode `rates`). The phase-1 directive does not change the rates default-mode contract — only adds `--refit` and `--history` as additional dispatch paths.
+- **`--tier-start-date`** remains required for `--refit` (same contract as window-mode `rates`). `--plan` is also required for `--refit` so the ledger's `tier` field is populated; missing `--plan` produces a clear error. The phase-1 directive does not change the default-mode `rates` contract — only adds `--refit` and `--history` as additional dispatch paths.
+
+### Tier identity in the ledger
+
+The ledger's `tier` field is populated from the `--plan` value the operator supplied to that `--refit` invocation. Accepted values match the existing `--plan` flag's documentation in `bin/claude-meter.mjs:65`: `pro`, `max-5x`, `max-20x`, `api`, `unknown`. Any other value triggers the same parser-time error path that any other `--plan` consumer already produces today. No new tier-inference logic in v1.
 
 ### Implementation surface (phase 1)
 
@@ -126,7 +156,9 @@ The `fits` array is append-only — never edit or delete existing entries. New f
 3. `appendFit` adds an entry to a fresh ledger and persists it.
 4. `appendFit` preserves existing entries when adding to a populated ledger.
 5. `filterFits` returns only matching entries on multi-tier history.
-6. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --log-file <synthetic JSONL>` appends one entry to the ledger and prints the fit summary on stdout.
+6. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --plan max-2x --log-file <synthetic JSONL>` appends one entry to the ledger and prints the fit summary on stdout.
+6b. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --log-file <synthetic JSONL>` (no `--plan`) exits non-zero with a clear "—plan required for --refit" error.
+6c. `readLedger` accepts a file with missing `schema_version` (treated as 1) and rejects `schema_version: 999` with a clear error naming the unsupported version.
 7. Subprocess CLI: `claude-meter rates --history` prints all entries in reverse-chronological order.
 
 ## Phase 2 — drift detection
@@ -155,7 +187,16 @@ The `⚠` marker appears only on weights that crossed the threshold. The summary
 
 ### Dismiss-warning surface
 
-A small dotfile `~/.local/share/claude-meter/last-drift-seen.txt` containing the `fit_at` timestamp of the drift event the operator has already seen. Next `rates` invocation prints the drift banner ONLY if the most-recent fit's `fit_at` is newer than the timestamp in `last-drift-seen.txt`. `claude-meter rates --dismiss-drift` updates the dotfile to the current most-recent fit's timestamp.
+A small dotfile `~/.claude/claude-meter-drift-seen` containing the `fit_at` ISO timestamp of the drift event the operator has already dismissed. Add as `DRIFT_SEEN_FILE` export in `src/constants.mjs`.
+
+**Banner-decision algorithm** (run at the top of every default-mode `rates` invocation, after the optional phase-3 cadence trigger):
+
+1. Read the ledger. If empty, no banner.
+2. Take the most-recent fit. Find the prior fit with the same `(tier, model, speed)`. If no prior, no banner (first fit can't drift).
+3. Call `computeDrift(prior, current)`. If `drifted === false`, no banner.
+4. Read `DRIFT_SEEN_FILE`. If its content equals `current.fit_at`, the operator already dismissed THIS drift event — no banner. Otherwise, print the banner.
+
+This algorithm makes the dotfile a per-fit dismiss marker. A subsequent non-drift refit (drift === false) means no banner regardless of the dotfile, because step 3 short-circuits before step 4. A subsequent drift refit with a different `fit_at` produces a fresh banner. `claude-meter rates --dismiss-drift` writes the current most-recent fit's `fit_at` to the dotfile.
 
 ### Implementation surface (phase 2)
 
@@ -184,8 +225,22 @@ Add monthly cadence so operators don't have to remember to run `--refit`. The sc
 Default: monthly (28 days). Per AITL's design: "anchored to the user's plan-renewal date" (the operator's `--tier-start-date` value, modulo months). The simpler v1 implementation:
 
 - Cadence window = 28 days.
-- If `now - most_recent_fit.fit_at >= 28 days` AND a `--tier-start-date` is set: auto-refit on next `rates` invocation, print the new fit + any drift warning, then continue with the requested output.
-- Tier transitions (new `--tier-start-date` value vs the ledger's most-recent `tier_started`) reset the cadence — fit immediately on next `rates` invocation, suppress drift detection (no prior fit in this tier).
+- If `now - most_recent_fit.fit_at >= 28 days` AND a `--tier-start-date` is set AND a `--plan` is set: auto-refit on next default-mode `rates` invocation, print the new fit + any drift warning, then continue with the requested output. The auto-refit is announced with a line printed BEFORE the regression output:
+  > `Scheduled refit ran (last fit was N days ago). Re-fitting and continuing.`
+- Tier transitions (new `--tier-start-date` value vs the ledger's most-recent `tier_started`, or new `--plan` value vs the ledger's most-recent `tier`) reset the cadence — fit immediately on next default-mode `rates` invocation, suppress drift detection (no prior fit in this `(tier, model, speed)` keyspace). Announce with:
+  > `Tier transition detected (was: <old>, now: <new>). Starting a new fit history.`
+
+### Gate scope (which `rates` invocations trigger the cadence)
+
+The cadence gate fires ONLY for the default-mode `rates` invocation (the window-mode regression). It does NOT fire for:
+
+- `claude-meter rates --refit` — already an explicit refit; redundant to gate.
+- `claude-meter rates --history` — read-only ledger inspection.
+- `claude-meter rates --dismiss-drift` — dotfile-only operation.
+- `claude-meter rates --by row` — legacy path; behavioral parity with pre-#34.
+- Any invocation with `--skip-scheduled-refit` — explicit one-shot opt-out.
+
+This keeps the operator-visible behavior change scoped to the default-mode `rates` invocation only. Operators who only ever use `rates --history` never see a refit they didn't ask for.
 
 The "anchored to plan-renewal date" piece is deferred to a follow-up — v1 uses a rolling 28-day window. Cadence-anchoring requires inferring the operator's specific renewal day-of-month, which AITL flagged as the same magic class as q7d-reset inference in the #33 directive.
 
@@ -205,7 +260,7 @@ The "anchored to plan-renewal date" piece is deferred to a follow-up — v1 uses
 1. Ledger is empty → cadence triggers immediately on first `rates` invocation with a tier-start-date.
 2. Most-recent fit is < 28 days old → cadence does NOT trigger.
 3. Most-recent fit is >= 28 days old → cadence triggers; ledger gains a new entry; subsequent `rates` output reflects the new weights.
-4. Tier transition (new `--tier-start-date` vs ledger's most-recent `tier_started`) → cadence triggers immediately, drift detection suppressed.
+4. Tier transition (new `--tier-start-date` OR `--plan` vs ledger's most-recent values) → cadence triggers immediately, drift detection suppressed, "Tier transition detected" announcement printed.
 5. `--skip-scheduled-refit` suppresses the cadence trigger for that invocation.
 
 ## Phase 4 — public-share endpoint (load-bearing)
@@ -213,26 +268,36 @@ The "anchored to plan-renewal date" piece is deferred to a follow-up — v1 uses
 ### Goal
 Allow operators who have already run `claude-meter consent` to opt into publishing their weight-history ledger to the community dataset. The endpoint is at `POST /api/v1/weights` on the meter API server.
 
-### Wire contract (locked in phase-4 directive PR)
-
-Skeleton (the phase-4 directive will lock exact field semantics):
+### Wire contract (skeleton — phase 4 directive PR locks exact semantics)
 
 ```json
 {
   "schema_version": 1,
-  "install_id": "<existing meter install_id>",
+  "install_id": "<existing meter install_id from CONFIG_FILE>",
+  "consent_token": "<existing token from CONFIG_FILE>",
   "submitted_at": "<RFC3339 UTC>",
   "fits": [ <ledger fit object verbatim> ]
 }
 ```
 
-Reuses the existing `install_id`-keyed dedup the share endpoint already does. No new auth surface — relies on the meter API server's existing rate-limit and abuse-prevention controls.
+Reuses the existing `install_id`-keyed dedup and the `consent_token` auth gate that `src/cli/analyze.mjs` already passes when posting to `/api/v1/submit` (see `src/cli/analyze.mjs:744`-`:773` and `src/share/client.mjs`). No new auth surface.
+
+### Minimum wire-contract lock list for the phase-4 directive
+
+The phase-4 directive PR MUST lock at least these contract points before any code lands:
+
+1. **Auth/consent fields** — confirm `consent_token` is the gate (matching the existing `/api/v1/submit` path), or specify a separate gate. If a separate gate, name the field and the persistence file.
+2. **Idempotency / dedup key** — `install_id` alone, `install_id + fit_at`, or `install_id + fits[].fit_at + fits[].tier + fits[].model + fits[].speed`. Determines whether duplicate submissions overwrite, merge, or are rejected.
+3. **Max payload size** — operators with a year of monthly fits across two models/tiers could have ~24-48 entries. Lock the hard cap (proposed: 100 entries per request; clients paginate beyond that).
+4. **Server error handling** — what HTTP status codes the client treats as retryable vs terminal. What error body shape the client surfaces to the operator.
+5. **Submission scope** — `fits` is full ledger (server dedupes) OR only fits not yet submitted (client tracks `last_submitted_at` in CONFIG_FILE). Pick one; v1 leans toward full-history-server-dedupes for simpler client state.
+6. **Server response shape** — what the client expects on 2xx (e.g. `{accepted: N, rejected: M, errors: [...]}`).
 
 ### Opt-in semantics
 
 - Default: weights are NOT published.
 - `claude-meter rates --share-weights` opts in for the current invocation (one-shot publish).
-- `claude-meter rates --share-weights --persistent` (or a config flag) opts in for all future scheduled refits. (Persistence mechanism TBD in the phase-4 directive — probably extending the existing `~/.local/share/claude-meter/consent.json` shape.)
+- `claude-meter rates --share-weights --persistent` opts in for all future scheduled refits. Persistence: a new boolean field `weights_share_enabled` in `CONFIG_FILE` (`~/.claude/claude-meter-config.json`), read and written by `src/consent.mjs`'s existing `readConfig`/`writeConfig`.
 - Existing `claude-meter consent` is a prerequisite — operators who haven't consented to the share program cannot publish weights either.
 
 ### Implementation surface (phase 4)
@@ -251,7 +316,7 @@ The meter API server implementation of `POST /api/v1/weights` lives in `cnighswo
 
 1. `--share-weights` without prior consent → emits the "run `claude-meter consent` first" error and exits non-zero.
 2. `--share-weights` with consent → POSTs the ledger's fits; mock server confirms request shape matches the wire contract.
-3. `--share-weights --persistent` writes the persistence flag to `consent.json`.
+3. `--share-weights --persistent` writes `weights_share_enabled: true` to `CONFIG_FILE` (`~/.claude/claude-meter-config.json`); subsequent invocations read that field via `readConfig` and auto-publish.
 4. Scheduled refit (phase 3 path) with `weights_share_enabled: true` in consent auto-publishes after the refit.
 5. Network failure → CLI exits non-zero, error message names the endpoint and the operator's recourse (`--no-share` retry).
 6. Server returns 4xx → CLI surfaces the server's error body verbatim.
