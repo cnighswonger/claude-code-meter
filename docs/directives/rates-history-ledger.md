@@ -3,7 +3,7 @@
 **Issues:** [#34](https://github.com/cnighswonger/claude-code-meter/issues/34)
 **Parent branch:** `feature/rates-history-ledger` (master)
 **Sub-branches (one per phase):** `feature/rates-history-ledger-phase{1,2,3,4}` — each merges back into the parent via its own PR; the parent merges to `main` once all four phases land.
-**Stage:** directive — round 2.1 (Codex r1 + r2 REQUEST_CHANGES folded; awaiting r3 freshness verification)
+**Stage:** directive — round 2.2 (Codex r3 APPROVE + Lead approve; cosmetic Lead flag folded)
 **Milestone:** v0.8.2 (phase 1 + 2 + 3) and v0.9.0 (phase 4, contemporaneous with the `--by row` removal)
 
 ## Revision history
@@ -23,6 +23,7 @@
   - **B2 mischaracterization.** The r2 revision-history block said `getConsentStatus()` returns a `consent_token` property; the actual return is `{consented, token, timestamp, installId}`. The wire payload field IS `consent_token` (per `src/cli/analyze.mjs:744`-`:773`) but it's sourced from `requestConsent()` (one-shot) or `getConsentStatus().token` (persistent). Updated Phase 4's wire-contract description and the revision-history block to distinguish API return shape vs wire field name.
   - **B3 residual.** Ledger example and test 6 used `max-2x` as a `--plan` value; `bin/claude-meter.mjs:65` lists `pro`/`max-5x`/`max-20x`/`api`/`unknown` as the documented accepted values. Replaced both occurrences with `max-20x`.
   - **AI #1 cleanup.** Phase 3 goal said the gate fires on "ANY `rates` command", contradicting the new §"Gate scope" exclusion list. Tightened to "only on the default-mode `rates` invocation (see §Gate scope for the exclusion list)".
+- **r2.1 → r2.2** (this in-place edit): folded AITL's cosmetic Lead-review flag. The Phase 1 ledger example carried real Max 2x empirical weights (`cache_create: 10.0061`, the ~381× ratio) under a `max-20x` tier label — 2x numbers wearing a 20x label, and no real 20x baseline exists yet (account upgraded 2026-06-19, after the measurement window). Couldn't relabel to `max-2x` (Codex B3: not an accepted `--plan` value), so instead replaced the specific empirical numbers with round illustrative placeholders and added an explicit "illustrative, not a measurement" note above the JSON. Non-blocking flag; folded for clarity.
 
 ## Goal
 
@@ -99,7 +100,11 @@ The ledger uses storage keys distinct from the existing display labels and JSONL
 
 Storage keys are the SI-style short form to keep the ledger compact and stable across CLI-display refactors.
 
-Shape (one operator, multiple fits over time):
+Shape (one operator, multiple fits over time). The numbers below are
+**illustrative placeholders**, not a real measurement — weights are
+tier-specific, and no `max-20x` baseline has been fit yet (this was written
+before any 20x measurement window existed). Do not read these as recovered
+20x values:
 
 ```json
 {
@@ -113,18 +118,18 @@ Shape (one operator, multiple fits over time):
       "speed": "standard",
       "window_count": 88,
       "rows_total": 3530,
-      "r_squared": 0.7148,
+      "r_squared": 0.7100,
       "weights": {
-        "input":        8.3862,
-        "output":       60.8049,
-        "cache_read":   0.0262,
-        "cache_create": 10.0061
+        "input":        8.0000,
+        "output":       60.0000,
+        "cache_read":   0.0250,
+        "cache_create": 10.0000
       },
       "validation": {
         "method": "hold-out-most-recent",
-        "predicted_pp": 58.3,
+        "predicted_pp": 58.0,
         "actual_pp": 57.0,
-        "error_pct": 2.3
+        "error_pct": 1.8
       },
       "cache_fix_label": "cache_fix_mixed"
     }
