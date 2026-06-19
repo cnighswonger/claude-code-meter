@@ -3,14 +3,14 @@
 **Issues:** [#34](https://github.com/cnighswonger/claude-code-meter/issues/34)
 **Parent branch:** `feature/rates-history-ledger` (master)
 **Sub-branches (one per phase):** `feature/rates-history-ledger-phase{1,2,3,4}` — each merges back into the parent via its own PR; the parent merges to `main` once all four phases land.
-**Stage:** directive — round 2 (Codex r1 REQUEST_CHANGES folded; awaiting r2)
+**Stage:** directive — round 2.1 (Codex r1 + r2 REQUEST_CHANGES folded; awaiting r3 freshness verification)
 **Milestone:** v0.8.2 (phase 1 + 2 + 3) and v0.9.0 (phase 4, contemporaneous with the `--by row` removal)
 
 ## Revision history
 
 - **r1 → r2** (this amendment): folded Codex r1 REQUEST_CHANGES findings.
   - **Blocker 1 — wrong storage root.** Directive said `~/.local/share/claude-meter/` but `src/constants.mjs:20` defines `CLAUDE_DIR = ~/.claude` as the canonical root. Switched ledger to `~/.claude/claude-meter-history.json` (next to the existing `claude-meter-config.json` and `claude-meter.jsonl`); switched drift-dismiss state to `~/.claude/claude-meter-drift-seen` for the same reason. No migration needed — no pre-existing files at the wrong path.
-  - **Blocker 2 — phase 4 referenced non-existent `consent.json`.** Replaced with the actual `CONFIG_FILE` (`~/.claude/claude-meter-config.json`) that `src/consent.mjs` reads via `readConfig`/`writeConfig`. Phase 4 extends the config record with `weights_share_enabled: boolean`. Auth uses the existing `consent_token` field already returned by `getConsentStatus()`, same path that `src/cli/analyze.mjs` already uses when posting to `/api/v1/submit`. No new auth surface.
+  - **Blocker 2 — phase 4 referenced non-existent `consent.json`.** Replaced with the actual `CONFIG_FILE` (`~/.claude/claude-meter-config.json`) that `src/consent.mjs` reads via `readConfig`/`writeConfig`. Phase 4 extends the config record with `weights_share_enabled: boolean`. Auth reuses the existing `consent_token` wire payload field already POSTed by `src/cli/analyze.mjs:744`-`:773`; the token string source is `requestConsent()` (one-shot) or `getConsentStatus().token` (persistent). `getConsentStatus()` returns `{consented, token, timestamp, installId}` (not a `consent_token` property) — the wire field name differs from the API return shape. No new auth surface.
   - **Blocker 3 — non-existent `--tier` flag.** Replaced with the existing `--plan` flag (`bin/claude-meter.mjs:22`, accepts `pro`/`max-5x`/`max-20x`/`api`/`unknown`). The ledger's `tier` field is populated from `args.plan` (or `"unknown"` if absent). `--plan` is required for `--refit` and any scheduled refit.
   - **AI #1 — phase 3 behavioral change.** Added explicit "Auto-refit ran" output line. Defined which `rates` invocations are subject to the cadence gate (only the default window-mode path; `--history`, `--dismiss-drift`, `--refit`, `--skip-scheduled-refit` are excluded).
   - **AI #2 — drift-dismiss state semantics.** Clarified that the default `rates` path always recomputes drift from the ledger (most-recent fit vs prior same-`(tier, model, speed)` fit) on every invocation; `last-drift-seen` only suppresses the banner if its timestamp matches the most-recent drifted fit's `fit_at`. A subsequent non-drift fit means no banner regardless of the dotfile.
@@ -18,6 +18,11 @@
   - **AI #4 — phase 4 minimum wire-contract lock.** Master directive now lists the minimum the phase-4 directive PR must lock: consent/auth fields, dedup/idempotency key, max payload size, server error handling, and whether `fits` is full-history or delta-only.
   - **AI #5 — new module rule.** Aligned the maintainability section with the phase-4 surface: a new `src/cli/weights-share.mjs` is the chosen path; rationale is that `src/cli/share.mjs` posts to `/api/v1/submit` (analyze rows) while weights are a distinct endpoint and payload shape. Inlining would entangle two endpoints in one module.
   - **Nit #1 — display vs storage vocabulary.** Added an explicit mapping table: storage key `cache_create` ↔ row field `cache_creation_input_tokens` ↔ display label `Cache Write`.
+- **r2 → r2.1** (this in-place edit): folded Codex r2 partial-resolution items.
+  - **B1 residual.** Phase 2's implementation surface still referenced `last-drift-seen.txt` instead of the locked `DRIFT_SEEN_FILE` constant. Replaced. Also added a cross-reference from the Phase 2 surface to the Phase 2 banner-decision algorithm + a note that Phase 3's cadence path reuses the same algorithm (closes the Phase 2→Phase 3 dependency Codex flagged as implicit).
+  - **B2 mischaracterization.** The r2 revision-history block said `getConsentStatus()` returns a `consent_token` property; the actual return is `{consented, token, timestamp, installId}`. The wire payload field IS `consent_token` (per `src/cli/analyze.mjs:744`-`:773`) but it's sourced from `requestConsent()` (one-shot) or `getConsentStatus().token` (persistent). Updated Phase 4's wire-contract description and the revision-history block to distinguish API return shape vs wire field name.
+  - **B3 residual.** Ledger example and test 6 used `max-2x` as a `--plan` value; `bin/claude-meter.mjs:65` lists `pro`/`max-5x`/`max-20x`/`api`/`unknown` as the documented accepted values. Replaced both occurrences with `max-20x`.
+  - **AI #1 cleanup.** Phase 3 goal said the gate fires on "ANY `rates` command", contradicting the new §"Gate scope" exclusion list. Tightened to "only on the default-mode `rates` invocation (see §Gate scope for the exclusion list)".
 
 ## Goal
 
@@ -102,7 +107,7 @@ Shape (one operator, multiple fits over time):
   "fits": [
     {
       "fit_at": "2026-06-17T17:00:00Z",
-      "tier": "max-2x",
+      "tier": "max-20x",
       "tier_started": "2026-05-23",
       "model": "claude-opus-4-7",
       "speed": "standard",
@@ -156,7 +161,7 @@ The ledger's `tier` field is populated from the `--plan` value the operator supp
 3. `appendFit` adds an entry to a fresh ledger and persists it.
 4. `appendFit` preserves existing entries when adding to a populated ledger.
 5. `filterFits` returns only matching entries on multi-tier history.
-6. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --plan max-2x --log-file <synthetic JSONL>` appends one entry to the ledger and prints the fit summary on stdout.
+6. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --plan max-20x --log-file <synthetic JSONL>` appends one entry to the ledger and prints the fit summary on stdout.
 6b. Subprocess CLI: `claude-meter rates --refit --tier-start-date 2026-05-23 --log-file <synthetic JSONL>` (no `--plan`) exits non-zero with a clear "—plan required for --refit" error.
 6c. `readLedger` accepts a file with missing `schema_version` (treated as 1) and rejects `schema_version: 999` with a clear error naming the unsupported version.
 7. Subprocess CLI: `claude-meter rates --history` prints all entries in reverse-chronological order.
@@ -201,7 +206,7 @@ This algorithm makes the dotfile a per-fit dismiss marker. A subsequent non-drif
 ### Implementation surface (phase 2)
 
 - **`src/cli/weights-ledger.mjs`** — add `computeDrift(prevFit, currentFit, thresholdPct=15)` returning `{drifted: bool, items: [{weight, prev, current, change_pct, crossed_threshold}]}`.
-- **`src/cli/rates.mjs`** — `runRefit` calls `computeDrift` against the prior matching fit; if `drifted`, prints the banner. `runWindowMode` (the default `rates` invocation) reads the most-recent fit, checks `last-drift-seen.txt`, and prints the banner at the top of its output if the operator hasn't dismissed it.
+- **`src/cli/rates.mjs`** — `runRefit` calls `computeDrift` against the prior matching fit; if `drifted`, prints the banner. `runWindowMode` (the default `rates` invocation) reads the most-recent fit, checks `DRIFT_SEEN_FILE`, and prints the banner at the top of its output if the operator hasn't dismissed it. The Phase 3 cadence path (when scheduled-refit fires) reuses this same banner-decision algorithm — see §"Banner-decision algorithm" above.
 - **`bin/claude-meter.mjs`** — add `--dismiss-drift` boolean.
 
 ### Tests (phase 2)
@@ -218,7 +223,7 @@ This algorithm makes the dotfile a per-fit dismiss marker. A subsequent non-drif
 ## Phase 3 — scheduled refit
 
 ### Goal
-Add monthly cadence so operators don't have to remember to run `--refit`. The scheduled-refit gate fires when the operator runs ANY `rates` command and the time since the most-recent fit exceeds the cadence window.
+Add monthly cadence so operators don't have to remember to run `--refit`. The scheduled-refit gate fires only on the default-mode `rates` invocation (see §"Gate scope" below for the explicit exclusion list) when the time since the most-recent fit exceeds the cadence window.
 
 ### Cadence
 
@@ -280,7 +285,7 @@ Allow operators who have already run `claude-meter consent` to opt into publishi
 }
 ```
 
-Reuses the existing `install_id`-keyed dedup and the `consent_token` auth gate that `src/cli/analyze.mjs` already passes when posting to `/api/v1/submit` (see `src/cli/analyze.mjs:744`-`:773` and `src/share/client.mjs`). No new auth surface.
+Reuses the existing `install_id`-keyed dedup and the `consent_token` wire field that `src/cli/analyze.mjs` already passes when posting to `/api/v1/submit` (see `src/cli/analyze.mjs:744`-`:773`). The token string itself comes from either `requestConsent(args.yes)` (the one-shot share path used by analyze today) or `getConsentStatus().token` (the persistent-share path used when `weights_share_enabled: true` is already set in `CONFIG_FILE`). The wire payload field is named `consent_token` in both cases. No new auth surface.
 
 ### Minimum wire-contract lock list for the phase-4 directive
 
