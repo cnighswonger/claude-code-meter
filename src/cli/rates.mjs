@@ -381,7 +381,10 @@ function mostRecentFit(fits) {
 /** Build the multi-line drift banner for a crossed-threshold drift event. */
 function driftBannerLines(prior, current, drift) {
   const lines = [];
-  lines.push(`DRIFT DETECTED — Q5h weights have changed since last fit (${prior.fit_at}):`);
+  // The directive's example header shows the prior fit's date only, not the
+  // full ISO timestamp (which is what we store and compare internally).
+  const priorDate = String(prior.fit_at).slice(0, 10);
+  lines.push(`DRIFT DETECTED — Q5h weights have changed since last fit (${priorDate}):`);
   lines.push("");
   const byKey = new Map(drift.items.map((i) => [i.weight, i]));
   for (const key of DRIFT_ROW_KEYS) {
@@ -394,7 +397,8 @@ function driftBannerLines(prior, current, drift) {
     lines.push(`  ${(key + ":").padEnd(14)} ${arrow.padEnd(20)} (${pct})${mark}`);
   }
   lines.push("");
-  lines.push("Workloads that were quota-efficient last period may now burn faster.");
+  // Hard-coded per the directive — exact text, no LLM-generated explanation.
+  lines.push("Workloads that were quota-efficient last month may now burn faster.");
   lines.push("Run `claude-meter rates --history` to see the full weight trajectory.");
   return lines;
 }
