@@ -55,13 +55,20 @@ export function ratesCommand(args) {
   // If a refit is due (empty ledger, tier transition, or >=28 days since the
   // last fit) and the operator supplied the flags a refit needs, run it first,
   // then continue with the requested output.
-  maybeRunScheduledRefit(rows, args);
+  //
+  // A tier transition (or the first fit for a tier) starts a NEW fit history,
+  // so it must suppress drift detection entirely — including the downstream
+  // pending banner, which would otherwise recompute drift against an OLDER
+  // same-tier fit when the operator switches BACK to a previously-seen tier.
+  // A normal cadence refit (same tier, stale) does NOT suppress the pending
+  // banner — drift detection should run on it.
+  const { suppressPendingBanner } = maybeRunScheduledRefit(rows, args);
 
   // Default-mode rates: surface a pending drift banner above the output if the
   // most-recent fit drifted from its prior same-(tier,model,speed) fit and the
   // operator hasn't dismissed it. See the banner-decision algorithm in the
   // Phase 2 directive section.
-  maybePrintPendingDriftBanner(args);
+  if (!suppressPendingBanner) maybePrintPendingDriftBanner(args);
   runWindowMode(rows, args["tier-start-date"]);
 }
 
@@ -471,25 +478,34 @@ const MS_PER_DAY = 24 * 60 * 60 * 1000;
  * Requires both --tier-start-date and --plan (a refit can't run without them);
  * silently no-ops otherwise. --skip-scheduled-refit is a one-shot opt-out.
  *
- * The scheduled refit suppresses its own drift banner so the downstream
- * maybePrintPendingDriftBanner prints it exactly once (Phase 2 reuse).
+ * The scheduled refit suppresses its own drift banner. Returns
+ * { suppressPendingBanner }: true means the caller must ALSO skip the
+ * downstream maybePrintPendingDriftBanner (tier transition / first fit start a
+ * new fit history → drift detection stays fully quiet, even against older
+ * same-tier history if the operator switches back to a prior tier). false
+ * means the normal cadence refit ran and the pending banner should print drift
+ * exactly once (Phase 2 reuse).
  */
 function maybeRunScheduledRefit(rows, args) {
-  if (args["skip-scheduled-refit"]) return;
+  const noChange = { suppressPendingBanner: false };
+  if (args["skip-scheduled-refit"]) return noChange;
 
   const tierStartDate = args["tier-start-date"];
   const plan = args.plan;
   // A scheduled refit needs the same inputs an explicit --refit needs. If the
   // operator didn't supply them, there's nothing to schedule.
-  if (!tierStartDate || !plan) return;
+  if (!tierStartDate || !plan) return noChange;
 
   const ledger = readLedger(args.ledgerFile);
   const priorForTier = mostRecentFit(filterFits(ledger.fits, { tier: plan }));
   const priorAny = mostRecentFit(ledger.fits);
 
   // Tier transition: the operator's plan/tier-start differs from the ledger's
-  // most-recent fit. Reset the cadence — refit immediately, announce, and let
-  // drift detection stay quiet (the new keyspace has no prior fit).
+  // most-recent fit. Reset the cadence — refit immediately, announce, and
+  // suppress drift detection ENTIRELY (own banner + downstream pending banner),
+  // because the transition starts a new fit history. Suppressing the pending
+  // banner is load-bearing for the switch-back case: an older same-tier fit
+  // must not resurface a drift warning on a transition invocation.
   if (priorAny && (priorAny.tier !== plan || priorAny.tier_started !== tierStartDate)) {
     const wasTier = priorAny.tier;
     const wasStart = priorAny.tier_started;
@@ -499,18 +515,23 @@ function maybeRunScheduledRefit(rows, args) {
     );
     runRefit(rows, args, { suppressDrift: true });
     console.log("");
-    return;
+    return { suppressPendingBanner: true };
   }
 
-  // No prior fit for this tier at all → first scheduled fit.
+  // No prior fit for this tier at all (empty ledger) → first scheduled fit.
+  // A new history → suppress the pending banner too (there is nothing to drift
+  // from, so this is belt-and-suspenders, but keeps the "new history" contract
+  // explicit).
   if (!priorForTier) {
     console.log("Scheduled refit ran (no prior fit on record). Re-fitting and continuing.");
     runRefit(rows, args, { suppressDrift: true });
     console.log("");
-    return;
+    return { suppressPendingBanner: true };
   }
 
-  // Cadence window: refit if the most-recent matching fit is stale.
+  // Cadence window: refit if the most-recent matching fit is stale. This is a
+  // normal refit within the same tier history — drift detection SHOULD run, so
+  // leave the pending banner enabled.
   const ageDays = (Date.now() - Date.parse(priorForTier.fit_at)) / MS_PER_DAY;
   if (ageDays >= CADENCE_DAYS) {
     console.log(
@@ -520,6 +541,7 @@ function maybeRunScheduledRefit(rows, args) {
     runRefit(rows, args, { suppressDrift: true });
     console.log("");
   }
+  return noChange;
 }
 
 function driftSeenPath(args) {

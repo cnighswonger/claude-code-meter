@@ -148,6 +148,49 @@ test("cadence: a tier transition triggers immediately and suppresses drift", () 
   }
 });
 
+test("cadence: switching BACK to a previously-seen tier suppresses drift entirely (no downstream pending banner)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cadence-"));
+  const ledger = join(dir, "history.json");
+  // OLD max-20x fit with tiny weights (would drift hugely), then a FRESH
+  // max-5x most-recent fit. Switching back to --plan max-20x is a tier
+  // transition. The downstream pending-banner pass recomputes against the
+  // older same-tier (max-20x) fit — it must NOT print a banner, because a
+  // transition starts a new fit history. This is Codex r1's blocker.
+  writeLedger(ledger, [
+    {
+      ...ledgerFit(fitAtDaysAgo(50), { tier: "max-20x", tierStarted: "2026-05-23" }),
+      weights: { input: 1, output: 1, cache_read: 0.001, cache_create: 0.5 },
+    },
+    ledgerFit(fitAtDaysAgo(2), { tier: "max-5x", tierStarted: "2026-04-01" }),
+  ]);
+  try {
+    const res = runDefaultRates(dir, ledger); // --plan max-20x
+    assert.equal(res.status, 0, `stderr: ${res.stderr}`);
+    assert.match(res.stdout, /Tier transition detected \(was: max-5x @ 2026-04-01, now: max-20x @ 2026-05-23\)/);
+    const driftCount = (res.stdout.match(/DRIFT DETECTED/g) || []).length;
+    assert.equal(driftCount, 0, `transition must show zero drift banners, got ${driftCount}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("cadence: a fit exactly 28.0 days old triggers (inclusive boundary)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cadence-"));
+  const ledger = join(dir, "history.json");
+  // Nudge slightly past 28d (28d + 1min) so the test isn't flaky on the exact
+  // millisecond the subprocess reads Date.now(); still exercises the boundary.
+  const justPast28 = new Date(Date.now() - (28 * 24 * 60 + 1) * 60 * 1000).toISOString();
+  writeLedger(ledger, [ledgerFit(justPast28)]);
+  try {
+    const res = runDefaultRates(dir, ledger);
+    assert.equal(res.status, 0, `stderr: ${res.stderr}`);
+    assert.match(res.stdout, /Scheduled refit ran \(last fit was 28 days ago\)/);
+    assert.equal(readLedger(ledger).fits.length, 2);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("cadence: a drifting scheduled refit prints the drift banner exactly once", () => {
   const dir = mkdtempSync(join(tmpdir(), "cadence-"));
   const ledger = join(dir, "history.json");
@@ -186,6 +229,60 @@ test("cadence: --skip-scheduled-refit suppresses the trigger for that invocation
     assert.equal(readLedger(ledger).fits.length, 1);
     // Still produces the normal regression output.
     assert.match(res.stdout, /Model: claude-opus-4-7/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("default-mode --plan validates against the accepted set (scheduled refit can write the ledger)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cadence-"));
+  const ledger = join(dir, "history.json");
+  const log = join(dir, "log.jsonl");
+  writeFitLog(log);
+  // Empty ledger + invalid --plan on the DEFAULT path: the cadence would
+  // otherwise write tier:"banana" to the ledger. Must be rejected at the
+  // parser before any ledger write — same guard as --refit (Phase 1).
+  try {
+    const res = spawnSync(
+      process.execPath,
+      [CLI_ENTRY, "rates", "--tier-start-date", "2026-05-23", "--plan", "banana", "--log-file", log, "--ledger-file", ledger],
+      { encoding: "utf-8" },
+    );
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /Invalid --plan value: "banana"/);
+    assert.equal(readLedger(ledger).fits.length, 0, "no fit should be written on an invalid --plan");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("gate scope: --history and --refit do not trigger the cadence", () => {
+  const dir = mkdtempSync(join(tmpdir(), "cadence-"));
+  const ledger = join(dir, "history.json");
+  const log = join(dir, "log.jsonl");
+  writeFitLog(log);
+  writeLedger(ledger, [ledgerFit(fitAtDaysAgo(60))]); // very stale
+  try {
+    // --history is read-only: no "Scheduled refit ran", ledger unchanged.
+    const hist = spawnSync(
+      process.execPath,
+      [CLI_ENTRY, "rates", "--history", "--ledger-file", ledger],
+      { encoding: "utf-8" },
+    );
+    assert.equal(hist.status, 0, `stderr: ${hist.stderr}`);
+    assert.doesNotMatch(hist.stdout, /Scheduled refit ran/);
+    assert.equal(readLedger(ledger).fits.length, 1, "--history must not trigger a cadence refit");
+
+    // --refit appends exactly one fit (its own), not a cadence-then-refit
+    // double append.
+    const refit = spawnSync(
+      process.execPath,
+      [CLI_ENTRY, "rates", "--refit", "--tier-start-date", "2026-05-23", "--plan", "max-20x", "--log-file", log, "--ledger-file", ledger],
+      { encoding: "utf-8" },
+    );
+    assert.equal(refit.status, 0, `stderr: ${refit.stderr}`);
+    assert.doesNotMatch(refit.stdout, /Scheduled refit ran/);
+    assert.equal(readLedger(ledger).fits.length, 2, "--refit appends one fit, not a cadence double-append");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
