@@ -13,6 +13,11 @@
 
 import { parseArgs } from "node:util";
 
+// Accepted --plan values. The ledger's `tier` field is keyed on this set, so
+// `rates --refit` validates against it before persisting (Phase 2's drift
+// comparison joins on the same (tier, model, speed) identity).
+const ACCEPTED_PLANS = ["pro", "max-5x", "max-20x", "api", "unknown"];
+
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -29,6 +34,11 @@ const { values, positionals } = parseArgs({
     // rates: window-mode regression flags
     by: { type: "string", default: "window" },
     "tier-start-date": { type: "string" },
+    // rates: weight-history ledger (Phase 1)
+    refit: { type: "boolean" },
+    history: { type: "boolean" },
+    model: { type: "string" },
+    "ledger-file": { type: "string" },
     // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
     "per-session": { type: "boolean" },
@@ -74,6 +84,10 @@ Options:
   --tier-start-date <YYYY-MM-DD>  Required for --by window. Filters rows to
                       ts >= date so the fit stays within a single (model, tier)
                       regime. See https://github.com/cnighswonger/claude-code-meter/issues/33
+  --refit             Run the window-mode fit and append it to the weight
+                      history ledger. Requires --tier-start-date and --plan.
+  --history           Print the weight history ledger (most-recent first).
+                      Filter with --model and/or --plan.
 
   analyze-only flags:
   --by-plan           Per-tier amortized L(t) (cost / (sub_price * calendar_days))
@@ -116,13 +130,40 @@ switch (command) {
   }
   case "rates": {
     const by = values.by;
-    if (by !== "window" && by !== "row") {
-      process.stderr.write(`Invalid --by value: "${by}". Accepted: window | row.\n`);
-      process.exit(2);
-    }
-    if (by === "window") {
-      const tsd = values["tier-start-date"];
-      if (!tsd || !/^\d{4}-\d{2}-\d{2}$/.test(tsd)) {
+    const tsd = values["tier-start-date"];
+    const validTsd = tsd && /^\d{4}-\d{2}-\d{2}$/.test(tsd);
+
+    if (values.history) {
+      // Read-only ledger inspection — no regression flags required.
+    } else if (values.refit) {
+      // Refit runs window-mode and records the result; needs both the
+      // tier-start-date (window contract) and --plan (ledger tier identity).
+      if (!validTsd) {
+        process.stderr.write(
+          "--tier-start-date <YYYY-MM-DD> is required for --refit.\n",
+        );
+        process.exit(2);
+      }
+      if (!values.plan) {
+        process.stderr.write(
+          "--plan <pro|max-5x|max-20x|api|unknown> is required for --refit " +
+            "(populates the ledger's tier field).\n",
+        );
+        process.exit(2);
+      }
+      if (!ACCEPTED_PLANS.includes(values.plan)) {
+        process.stderr.write(
+          `Invalid --plan value: "${values.plan}". ` +
+            `Accepted: ${ACCEPTED_PLANS.join(" | ")}.\n`,
+        );
+        process.exit(2);
+      }
+    } else {
+      if (by !== "window" && by !== "row") {
+        process.stderr.write(`Invalid --by value: "${by}". Accepted: window | row.\n`);
+        process.exit(2);
+      }
+      if (by === "window" && !validTsd) {
         process.stderr.write(
           "--tier-start-date <YYYY-MM-DD> is required for window-mode regression. " +
             "Use --by row to skip the v1 window contract (deprecated; produces unreliable weights).\n",
@@ -130,12 +171,17 @@ switch (command) {
         process.exit(2);
       }
     }
+
     const { ratesCommand } = await import("../src/cli/rates.mjs");
     ratesCommand({
       ...args,
       logFile: values["log-file"],
       by,
       "tier-start-date": values["tier-start-date"],
+      refit: values.refit,
+      history: values.history,
+      model: values.model,
+      ledgerFile: values["ledger-file"],
     });
     break;
   }

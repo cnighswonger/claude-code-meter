@@ -20,6 +20,9 @@ export const SCHEMA_VERSION = 1;
 export const CLAUDE_DIR = join(homedir(), ".claude");
 export const LOG_FILE = join(CLAUDE_DIR, "claude-meter.jsonl");
 export const CONFIG_FILE = join(CLAUDE_DIR, "claude-meter-config.json");
+// Weight-history ledger (rates --refit / --history; see
+// docs/directives/rates-history-ledger.md). Append-only JSON.
+export const HISTORY_FILE = join(CLAUDE_DIR, "claude-meter-history.json");
 export const MESSAGES_ENDPOINT = "/v1/messages";
 
 // Proxy-mode ingestion sources (see docs/directives/proxy-ingest.md).
