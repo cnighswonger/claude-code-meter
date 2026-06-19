@@ -23,6 +23,9 @@ export const CONFIG_FILE = join(CLAUDE_DIR, "claude-meter-config.json");
 // Weight-history ledger (rates --refit / --history; see
 // docs/directives/rates-history-ledger.md). Append-only JSON.
 export const HISTORY_FILE = join(CLAUDE_DIR, "claude-meter-history.json");
+// Drift-dismiss marker (Phase 2): holds the fit_at of the drift event the
+// operator last dismissed via `rates --dismiss-drift`.
+export const DRIFT_SEEN_FILE = join(CLAUDE_DIR, "claude-meter-drift-seen");
 export const MESSAGES_ENDPOINT = "/v1/messages";
 
 // Proxy-mode ingestion sources (see docs/directives/proxy-ingest.md).
