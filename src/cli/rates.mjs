@@ -1,5 +1,6 @@
 import { readAllRows, filterByQuotaWindow, groupByQuotaWindow } from "../log/reader.mjs";
 import { KNOWN_RATES } from "../constants.mjs";
+import { appendFit, readLedger, filterFits } from "./weights-ledger.mjs";
 
 const DEPRECATION_NOTICE =
   "DEPRECATED: --by row produces unreliable weights (R² is typically negative\n" +
@@ -19,9 +20,20 @@ const DEPRECATION_NOTICE =
  * OLS normal equations: w = (X^T X)^{-1} X^T y
  */
 export function ratesCommand(args) {
+  // --history reads the ledger and does not touch the log.
+  if (args.history) {
+    runHistory(args);
+    return;
+  }
+
   const rows = readAllRows(args.logFile);
   if (rows.length === 0) {
     console.log("No usage data found.");
+    return;
+  }
+
+  if (args.refit) {
+    runRefit(rows, args);
     return;
   }
 
@@ -43,20 +55,39 @@ function runWindowMode(rows, tierStartDate) {
   }
 
   const cacheFixLabel = detectCacheFixLabel(filtered);
+  const pairs = buildPairs(filtered);
 
-  const windows = groupByQuotaWindow(filtered);
-  if (windows.size === 0) {
+  if (pairs === null) {
     console.log("No quota windows found in the filtered rows (missing q5h_reset).");
     return;
   }
+  if (pairs.size === 0) {
+    console.log(
+      "No qualifying single-model windows after excluding the in-progress current window.\n" +
+        "Collect more data or use deprecated --by row for legacy comparison.",
+    );
+    return;
+  }
 
-  // Exclude the in-progress current window — the largest q5h_reset.
+  for (const pair of pairs.values()) {
+    renderFit(pair, fitPair(pair), cacheFixLabel);
+  }
+}
+
+/**
+ * Group filtered rows into per-(model|speed) pairs of single-model windows,
+ * excluding the in-progress current window (the largest q5h_reset) and any
+ * mixed-model window. Returns null if no windows exist at all, otherwise a
+ * Map<pairKey, {model, speed, windows}>.
+ */
+function buildPairs(filtered) {
+  const windows = groupByQuotaWindow(filtered);
+  if (windows.size === 0) return null;
+
   const sortedResets = [...windows.keys()].sort((a, b) => a - b);
   const inProgressReset = sortedResets[sortedResets.length - 1];
 
-  // Per-(model|speed): gather single-model windows for that pair only.
-  // A window is "single-model" for pair P iff every row in it belongs to P.
-  const pairs = new Map(); // key -> { model, speed, windows: [] }
+  const pairs = new Map();
   for (const [reset, w] of windows) {
     if (reset === inProgressReset) continue;
     const pairKey = singlePairOf(w.rows);
@@ -67,82 +98,39 @@ function runWindowMode(rows, tierStartDate) {
     }
     pairs.get(pairKey).windows.push(w);
   }
-
-  if (pairs.size === 0) {
-    console.log(
-      "No qualifying single-model windows after excluding the in-progress current window.\n" +
-        "Collect more data or use deprecated --by row for legacy comparison.",
-    );
-    return;
-  }
-
-  for (const [pairKey, pair] of pairs) {
-    printPair(pair, cacheFixLabel);
-    void pairKey;
-  }
+  return pairs;
 }
 
-function printPair(pair, cacheFixLabel) {
-  // Apply the q5h_max and rows_per_window filters.
+/**
+ * Compute the OLS fit for one (model|speed) pair. Pure — no console output.
+ * Returns one of:
+ *   { status: "no_qualifying" }
+ *   { status: "too_few", qualifying }
+ *   { status: "singular", qualifying, totalRows }
+ *   { status: "ok", qualifying, totalRows, weights, rSquared,
+ *     holdoutPredictedPp, holdoutActualPp, holdoutErrorPct }
+ */
+function fitPair(pair) {
   const qualifying = pair.windows
     .filter((w) => w.q5h_max >= 0.1 && w.rows.length >= 20)
     .sort((a, b) => a.q5h_reset - b.q5h_reset);
 
-  console.log(`\nModel: ${pair.model} (${pair.speed})`);
+  if (qualifying.length === 0) return { status: "no_qualifying" };
 
-  if (qualifying.length === 0) {
-    console.log(
-      `  No qualifying windows for ${pair.model}|${pair.speed}. ` +
-        "Collect more data or use deprecated --by row for legacy comparison.",
-    );
-    return;
-  }
-
-  // Single hold-out: drop the most-recent qualifying completed window for validation.
-  // If only one qualifying window, we cannot hold out and still fit — flag and skip.
-  if (qualifying.length < 2) {
-    const totalRows = qualifying.reduce((acc, w) => acc + w.rows.length, 0);
-    console.log(
-      `Mode: window (${qualifying.length} Q5h windows aggregated from ${totalRows} rows` +
-        (cacheFixLabel ? `, ${cacheFixLabel}` : "") +
-        ")",
-    );
-    console.log(
-      `  Only ${qualifying.length} qualifying window(s); need at least 2 (fit + hold-out). ` +
-        "Collect more data or use deprecated --by row for legacy comparison.",
-    );
-    return;
-  }
+  const totalRows = qualifying.reduce((acc, w) => acc + w.rows.length, 0);
+  if (qualifying.length < 2) return { status: "too_few", qualifying, totalRows };
 
   const holdOut = qualifying[qualifying.length - 1];
   const fitWindows = qualifying.slice(0, -1);
 
-  const insufficient = qualifying.length < 20;
-  const totalRows = qualifying.reduce((acc, w) => acc + w.rows.length, 0);
-
-  console.log(
-    `Mode: window (${qualifying.length} Q5h windows aggregated from ${totalRows} rows` +
-      (cacheFixLabel ? `, ${cacheFixLabel}` : "") +
-      ")",
-  );
-
-  if (insufficient) {
-    console.log(
-      `  Insufficient data (${qualifying.length} qualifying windows, threshold 20) — ` +
-        "fit reported as low-confidence.",
-    );
-  }
-
   // Build X, y from aggregated windows. y is q5h_max in percentage points (×100)
   // and X columns are token counts in millions, so recovered weights are
-  // pp-per-Mtok — matches the directive's example output. Column means can
-  // span ~2500x (cache_read mean ~195 Mtok vs input mean ~0.08 Mtok on real
-  // logs); we mean-scale columns before the Gauss-Jordan inversion so the
-  // condition number stays bounded when one column has near-constant tiny
-  // values relative to the others. This rescaling is mathematically
-  // equivalent to solving on the raw columns and is invariant on
-  // well-conditioned matrices like the AITL fixture, but it prevents
-  // singular-matrix failures on degenerate-but-valid synthetic inputs.
+  // pp-per-Mtok. Column means can span ~2500x (cache_read mean ~195 Mtok vs
+  // input mean ~0.08 Mtok on real logs); we mean-scale columns before the
+  // Gauss-Jordan inversion so the condition number stays bounded. This
+  // rescaling is mathematically equivalent to solving on the raw columns and
+  // is invariant on well-conditioned matrices, but it prevents singular-matrix
+  // failures on degenerate-but-valid synthetic inputs.
   const rawX = fitWindows.map((w) => aggregateTokens(w.rows));
   const y = fitWindows.map((w) => w.q5h_max * 100);
 
@@ -151,14 +139,9 @@ function printPair(pair, cacheFixLabel) {
   const scaledX = rawX.map((row) => row.map((x, j) => x / safeMeans[j]));
 
   const scaledWeights = olsRegression(scaledX, y);
-  if (!scaledWeights) {
-    console.log("  Regression failed (singular matrix).");
-    return;
-  }
+  if (!scaledWeights) return { status: "singular", qualifying, totalRows };
   const weights = scaledWeights.map((w, j) => w / safeMeans[j]);
 
-  // R-squared on the fit set (use raw X with back-scaled weights — equivalent
-  // to scaled X with scaledWeights).
   const yMean = y.reduce((a, b) => a + b, 0) / y.length;
   let ssTot = 0;
   let ssRes = 0;
@@ -169,26 +152,72 @@ function printPair(pair, cacheFixLabel) {
   }
   const rSquared = ssTot > 0 ? 1 - ssRes / ssTot : 0;
 
-  // Held-out prediction error. holdoutPredicted is in pp; holdoutActualPp is
-  // the holdout window's q5h_max in pp.
   const holdoutTokens = aggregateTokens(holdOut.rows);
-  const holdoutPredicted = holdoutTokens.reduce((sum, x, j) => sum + x * weights[j], 0);
+  const holdoutPredictedPp = holdoutTokens.reduce((sum, x, j) => sum + x * weights[j], 0);
   const holdoutActualPp = holdOut.q5h_max * 100;
   const holdoutErrorPct =
-    holdoutActualPp !== 0 ? Math.abs(holdoutPredicted - holdoutActualPp) / holdoutActualPp : 0;
+    holdoutActualPp !== 0 ? Math.abs(holdoutPredictedPp - holdoutActualPp) / holdoutActualPp : 0;
 
-  console.log(`  R-squared:                   ${rSquared.toFixed(4)}`);
+  return {
+    status: "ok",
+    qualifying,
+    totalRows,
+    weights,
+    rSquared,
+    holdoutPredictedPp,
+    holdoutActualPp,
+    holdoutErrorPct,
+  };
+}
+
+function renderFit(pair, fit, cacheFixLabel) {
+  console.log(`\nModel: ${pair.model} (${pair.speed})`);
+
+  if (fit.status === "no_qualifying") {
+    console.log(
+      `  No qualifying windows for ${pair.model}|${pair.speed}. ` +
+        "Collect more data or use deprecated --by row for legacy comparison.",
+    );
+    return;
+  }
+
+  const modeLine =
+    `Mode: window (${fit.qualifying.length} Q5h windows aggregated from ${fit.totalRows} rows` +
+    (cacheFixLabel ? `, ${cacheFixLabel}` : "") +
+    ")";
+  console.log(modeLine);
+
+  if (fit.status === "too_few") {
+    console.log(
+      `  Only ${fit.qualifying.length} qualifying window(s); need at least 2 (fit + hold-out). ` +
+        "Collect more data or use deprecated --by row for legacy comparison.",
+    );
+    return;
+  }
+  if (fit.status === "singular") {
+    console.log("  Regression failed (singular matrix).");
+    return;
+  }
+
+  if (fit.qualifying.length < 20) {
+    console.log(
+      `  Insufficient data (${fit.qualifying.length} qualifying windows, threshold 20) — ` +
+        "fit reported as low-confidence.",
+    );
+  }
+
+  console.log(`  R-squared:                   ${fit.rSquared.toFixed(4)}`);
   console.log(
-    `  Held-out window error:       ${(holdoutErrorPct * 100).toFixed(1)}% ` +
-      `(predicted ${holdoutPredicted.toFixed(1)} pp vs actual ${holdoutActualPp.toFixed(1)} pp)`,
+    `  Held-out window error:       ${(fit.holdoutErrorPct * 100).toFixed(1)}% ` +
+      `(predicted ${fit.holdoutPredictedPp.toFixed(1)} pp vs actual ${fit.holdoutActualPp.toFixed(1)} pp)`,
   );
 
   const labels = ["Input", "Output", "Cache Read", "Cache Write"];
-  const inputWeight = weights[0] || 1;
+  const inputWeight = fit.weights[0] || 1;
 
   console.log(`\n  Relative billing weights (normalized to input = 1.0):`);
   for (let i = 0; i < 4; i++) {
-    const relative = weights[i] / inputWeight;
+    const relative = fit.weights[i] / inputWeight;
     console.log(`    ${labels[i].padEnd(14)} ${relative.toFixed(3)}`);
   }
 
@@ -206,8 +235,110 @@ function printPair(pair, cacheFixLabel) {
 
   console.log(`\n  Raw weights (q5h percentage points per Mtok):`);
   for (let i = 0; i < 4; i++) {
-    console.log(`    ${labels[i].padEnd(14)} ${weights[i].toExponential(4)}`);
+    console.log(`    ${labels[i].padEnd(14)} ${fit.weights[i].toExponential(4)}`);
   }
+}
+
+// -- refit / history (Phase 1 ledger) -----------------------------------------
+
+const STORAGE_KEYS = ["input", "output", "cache_read", "cache_create"];
+
+function runRefit(rows, args) {
+  const tierStartDate = args["tier-start-date"];
+  const filtered = rows.filter((r) => typeof r.ts === "string" && r.ts.slice(0, 10) >= tierStartDate);
+  if (filtered.length === 0) {
+    console.log(`No rows at or after --tier-start-date ${tierStartDate}.`);
+    return;
+  }
+
+  const cacheFixLabel = detectCacheFixLabel(filtered);
+  const pairs = buildPairs(filtered);
+
+  if (pairs === null) {
+    console.log("No quota windows found in the filtered rows (missing q5h_reset).");
+    return;
+  }
+  if (pairs.size === 0) {
+    console.log(
+      "No qualifying single-model windows after excluding the in-progress current window.\n" +
+        "Collect more data or use deprecated --by row for legacy comparison.",
+    );
+    return;
+  }
+
+  const fitAt = new Date().toISOString();
+  let appended = 0;
+  for (const pair of pairs.values()) {
+    const fit = fitPair(pair);
+    renderFit(pair, fit, cacheFixLabel);
+    if (fit.status !== "ok") continue; // only durable fits enter the ledger
+
+    appendFit(args.ledgerFile, {
+      fit_at: fitAt,
+      tier: args.plan,
+      tier_started: tierStartDate,
+      model: pair.model,
+      speed: pair.speed,
+      window_count: fit.qualifying.length,
+      rows_total: fit.totalRows,
+      r_squared: round(fit.rSquared, 4),
+      weights: {
+        input: round(fit.weights[0], 4),
+        output: round(fit.weights[1], 4),
+        cache_read: round(fit.weights[2], 4),
+        cache_create: round(fit.weights[3], 4),
+      },
+      validation: {
+        method: "hold-out-most-recent",
+        predicted_pp: round(fit.holdoutPredictedPp, 1),
+        actual_pp: round(fit.holdoutActualPp, 1),
+        error_pct: round(fit.holdoutErrorPct * 100, 1),
+      },
+      cache_fix_label: cacheFixLabel,
+    });
+    appended++;
+  }
+
+  console.log(
+    `\nRecorded ${appended} fit${appended === 1 ? "" : "s"} to the weight history ledger.`,
+  );
+}
+
+function runHistory(args) {
+  const ledger = readLedger(args.ledgerFile);
+  const fits = filterFits(ledger.fits, { tier: args.plan, model: args.model });
+
+  if (fits.length === 0) {
+    console.log("No fits in the weight history ledger.");
+    return;
+  }
+
+  // Most-recent first.
+  const ordered = [...fits].sort((a, b) => (a.fit_at < b.fit_at ? 1 : a.fit_at > b.fit_at ? -1 : 0));
+
+  console.log("Weight history (most-recent first):\n");
+  for (const f of ordered) {
+    const w = f.weights || {};
+    const label = f.cache_fix_label ? `, ${f.cache_fix_label}` : "";
+    console.log(`${f.fit_at}  ${f.model} (${f.speed})  tier=${f.tier}`);
+    console.log(
+      `  windows=${f.window_count}  R²=${fmt(f.r_squared)}  ` +
+        `held-out err=${fmt(f.validation && f.validation.error_pct)}%${label}`,
+    );
+    console.log(
+      "  weights (pp/Mtok): " +
+        STORAGE_KEYS.map((k) => `${k}=${fmt(w[k])}`).join("  "),
+    );
+  }
+}
+
+function round(n, digits) {
+  const f = 10 ** digits;
+  return Math.round(n * f) / f;
+}
+
+function fmt(n) {
+  return typeof n === "number" ? String(n) : "n/a";
 }
 
 function singlePairOf(windowRows) {
