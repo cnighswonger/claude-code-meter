@@ -39,6 +39,9 @@ const { values, positionals } = parseArgs({
     history: { type: "boolean" },
     model: { type: "string" },
     "ledger-file": { type: "string" },
+    // rates: drift detection (Phase 2)
+    "dismiss-drift": { type: "boolean" },
+    "drift-seen-file": { type: "string" },
     // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
     "per-session": { type: "boolean" },
@@ -88,6 +91,8 @@ Options:
                       history ledger. Requires --tier-start-date and --plan.
   --history           Print the weight history ledger (most-recent first).
                       Filter with --model and/or --plan.
+  --dismiss-drift     Acknowledge the current drift warning so it stops
+                      printing above rates output until the next drift event.
 
   analyze-only flags:
   --by-plan           Per-tier amortized L(t) (cost / (sub_price * calendar_days))
@@ -133,8 +138,8 @@ switch (command) {
     const tsd = values["tier-start-date"];
     const validTsd = tsd && /^\d{4}-\d{2}-\d{2}$/.test(tsd);
 
-    if (values.history) {
-      // Read-only ledger inspection — no regression flags required.
+    if (values.history || values["dismiss-drift"]) {
+      // Read-only ledger inspection / dotfile-only op — no regression flags.
     } else if (values.refit) {
       // Refit runs window-mode and records the result; needs both the
       // tier-start-date (window contract) and --plan (ledger tier identity).
@@ -182,6 +187,8 @@ switch (command) {
       history: values.history,
       model: values.model,
       ledgerFile: values["ledger-file"],
+      "dismiss-drift": values["dismiss-drift"],
+      driftSeenFile: values["drift-seen-file"],
     });
     break;
   }

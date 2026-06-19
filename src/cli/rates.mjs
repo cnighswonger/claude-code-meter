@@ -1,6 +1,7 @@
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { readAllRows, filterByQuotaWindow, groupByQuotaWindow } from "../log/reader.mjs";
-import { KNOWN_RATES } from "../constants.mjs";
-import { appendFit, readLedger, filterFits } from "./weights-ledger.mjs";
+import { KNOWN_RATES, DRIFT_SEEN_FILE } from "../constants.mjs";
+import { appendFit, readLedger, filterFits, computeDrift } from "./weights-ledger.mjs";
 
 const DEPRECATION_NOTICE =
   "DEPRECATED: --by row produces unreliable weights (R² is typically negative\n" +
@@ -20,6 +21,12 @@ const DEPRECATION_NOTICE =
  * OLS normal equations: w = (X^T X)^{-1} X^T y
  */
 export function ratesCommand(args) {
+  // --dismiss-drift is a dotfile-only operation; no log or regression.
+  if (args["dismiss-drift"]) {
+    runDismissDrift(args);
+    return;
+  }
+
   // --history reads the ledger and does not touch the log.
   if (args.history) {
     runHistory(args);
@@ -42,6 +49,12 @@ export function ratesCommand(args) {
     runRowMode(rows);
     return;
   }
+
+  // Default-mode rates: surface a pending drift banner above the output if the
+  // most-recent fit drifted from its prior same-(tier,model,speed) fit and the
+  // operator hasn't dismissed it. See the banner-decision algorithm in the
+  // Phase 2 directive section.
+  maybePrintPendingDriftBanner(args);
   runWindowMode(rows, args["tier-start-date"]);
 }
 
@@ -268,12 +281,13 @@ function runRefit(rows, args) {
 
   const fitAt = new Date().toISOString();
   let appended = 0;
+  const driftBanners = [];
   for (const pair of pairs.values()) {
     const fit = fitPair(pair);
     renderFit(pair, fit, cacheFixLabel);
     if (fit.status !== "ok") continue; // only durable fits enter the ledger
 
-    appendFit(args.ledgerFile, {
+    const entry = {
       fit_at: fitAt,
       tier: args.plan,
       tier_started: tierStartDate,
@@ -295,13 +309,32 @@ function runRefit(rows, args) {
         error_pct: round(fit.holdoutErrorPct * 100, 1),
       },
       cache_fix_label: cacheFixLabel,
-    });
+    };
+
+    // Drift check against the most-recent prior fit for this exact
+    // (tier, model, speed) — captured BEFORE this entry is appended.
+    const prior = mostRecentFit(
+      filterFits(readLedger(args.ledgerFile).fits, {
+        tier: entry.tier,
+        model: entry.model,
+        speed: entry.speed,
+      }),
+    );
+    const drift = computeDrift(prior, entry);
+    if (drift.drifted) driftBanners.push(driftBannerLines(prior, entry, drift));
+
+    appendFit(args.ledgerFile, entry);
     appended++;
   }
 
   console.log(
     `\nRecorded ${appended} fit${appended === 1 ? "" : "s"} to the weight history ledger.`,
   );
+
+  for (const banner of driftBanners) {
+    console.log("");
+    for (const line of banner) console.log(line);
+  }
 }
 
 function runHistory(args) {
@@ -330,6 +363,98 @@ function runHistory(args) {
         STORAGE_KEYS.map((k) => `${k}=${fmt(w[k])}`).join("  "),
     );
   }
+}
+
+// -- drift detection (Phase 2) ------------------------------------------------
+
+// Banner row order matches the directive's example output.
+const DRIFT_ROW_KEYS = ["cache_read", "cache_create", "input", "output"];
+
+function mostRecentFit(fits) {
+  let best = null;
+  for (const f of fits) {
+    if (best === null || f.fit_at > best.fit_at) best = f;
+  }
+  return best;
+}
+
+/** Build the multi-line drift banner for a crossed-threshold drift event. */
+function driftBannerLines(prior, current, drift) {
+  const lines = [];
+  lines.push(`DRIFT DETECTED — Q5h weights have changed since last fit (${prior.fit_at}):`);
+  lines.push("");
+  const byKey = new Map(drift.items.map((i) => [i.weight, i]));
+  for (const key of DRIFT_ROW_KEYS) {
+    const it = byKey.get(key);
+    if (!it) continue;
+    const arrow = `${fmt(it.prev)} → ${fmt(it.current)}`;
+    const sign = it.change_pct >= 0 ? "+" : "";
+    const pct = Number.isFinite(it.change_pct) ? `${sign}${it.change_pct.toFixed(1)}%` : "new";
+    const mark = it.crossed_threshold ? "  ⚠" : "";
+    lines.push(`  ${(key + ":").padEnd(14)} ${arrow.padEnd(20)} (${pct})${mark}`);
+  }
+  lines.push("");
+  lines.push("Workloads that were quota-efficient last period may now burn faster.");
+  lines.push("Run `claude-meter rates --history` to see the full weight trajectory.");
+  return lines;
+}
+
+/**
+ * Banner-decision algorithm for the default-mode `rates` invocation:
+ *   1. Read the ledger. Empty → no banner.
+ *   2. Most-recent fit; find prior fit for the same (tier, model, speed).
+ *      No prior → no banner.
+ *   3. computeDrift(prior, current). Not drifted → no banner.
+ *   4. If DRIFT_SEEN_FILE content equals current.fit_at, already dismissed →
+ *      no banner. Otherwise print it.
+ */
+function maybePrintPendingDriftBanner(args) {
+  const ledger = readLedger(args.ledgerFile);
+  if (ledger.fits.length === 0) return;
+
+  const current = mostRecentFit(ledger.fits);
+  if (!current) return;
+
+  const priors = filterFits(ledger.fits, {
+    tier: current.tier,
+    model: current.model,
+    speed: current.speed,
+  }).filter((f) => f.fit_at < current.fit_at);
+  const prior = mostRecentFit(priors);
+  if (!prior) return;
+
+  const drift = computeDrift(prior, current);
+  if (!drift.drifted) return;
+
+  if (readDriftSeen(args) === current.fit_at) return; // already dismissed
+
+  for (const line of driftBannerLines(prior, current, drift)) console.log(line);
+  console.log("");
+}
+
+function runDismissDrift(args) {
+  const ledger = readLedger(args.ledgerFile);
+  if (ledger.fits.length === 0) {
+    console.log("No fits in the weight history ledger; nothing to dismiss.");
+    return;
+  }
+  const current = mostRecentFit(ledger.fits);
+  writeDriftSeen(args, current.fit_at);
+  console.log(`Dismissed drift warning for the fit at ${current.fit_at}.`);
+}
+
+function driftSeenPath(args) {
+  return args.driftSeenFile || DRIFT_SEEN_FILE;
+}
+
+function readDriftSeen(args) {
+  const path = driftSeenPath(args);
+  if (!existsSync(path)) return null;
+  return readFileSync(path, "utf-8").trim();
+}
+
+function writeDriftSeen(args, fitAt) {
+  writeFileSync(driftSeenPath(args), fitAt + "\n");
 }
 
 function round(n, digits) {

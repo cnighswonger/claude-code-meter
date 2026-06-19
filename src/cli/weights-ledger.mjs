@@ -52,3 +52,46 @@ export function filterFits(fits, { tier, model, speed } = {}) {
       (speed === undefined || f.speed === speed),
   );
 }
+
+// Storage keys, in the canonical display order used by the drift banner.
+const DRIFT_WEIGHT_KEYS = ["cache_read", "cache_create", "input", "output"];
+
+/**
+ * Compare two fits' weights and report which crossed the drift threshold.
+ *
+ * Returns { drifted, items } where items is one entry per weight key:
+ *   { weight, prev, current, change_pct, crossed_threshold }
+ * `drifted` is true iff any item crossed the threshold.
+ *
+ * A missing prevFit (no prior fit for this (tier, model, speed)) yields
+ * { drifted: false, items: [] } — a first fit can't drift from anything.
+ *
+ * change_pct is relative to the prior weight: (current - prev) / |prev| * 100.
+ * When the prior weight is 0, a nonzero current is treated as a crossing
+ * (infinite relative change); prev=current=0 is no change.
+ */
+export function computeDrift(prevFit, currentFit, thresholdPct = 15) {
+  if (!prevFit || !prevFit.weights || !currentFit || !currentFit.weights) {
+    return { drifted: false, items: [] };
+  }
+
+  const items = DRIFT_WEIGHT_KEYS.map((weight) => {
+    const prev = prevFit.weights[weight];
+    const current = currentFit.weights[weight];
+    let changePct;
+    if (prev === 0) {
+      changePct = current === 0 ? 0 : Infinity;
+    } else {
+      changePct = ((current - prev) / Math.abs(prev)) * 100;
+    }
+    return {
+      weight,
+      prev,
+      current,
+      change_pct: changePct,
+      crossed_threshold: Math.abs(changePct) > thresholdPct,
+    };
+  });
+
+  return { drifted: items.some((i) => i.crossed_threshold), items };
+}
