@@ -42,6 +42,8 @@ const { values, positionals } = parseArgs({
     // rates: drift detection (Phase 2)
     "dismiss-drift": { type: "boolean" },
     "drift-seen-file": { type: "string" },
+    // rates: scheduled refit cadence (Phase 3)
+    "skip-scheduled-refit": { type: "boolean" },
     // analyze: by-plan L(t) split
     "by-plan": { type: "boolean" },
     "per-session": { type: "boolean" },
@@ -93,6 +95,10 @@ Options:
                       Filter with --model and/or --plan.
   --dismiss-drift     Acknowledge the current drift warning so it stops
                       printing above rates output until the next drift event.
+  --skip-scheduled-refit  Skip the monthly auto-refit for this one invocation
+                      (the cadence otherwise refits when the last fit is 28+
+                      days old, on a tier transition, or when no prior fit
+                      exists; requires --tier-start-date and --plan).
 
   analyze-only flags:
   --by-plan           Per-tier amortized L(t) (cost / (sub_price * calendar_days))
@@ -175,6 +181,16 @@ switch (command) {
         );
         process.exit(2);
       }
+      // --plan is optional in default mode, but if present it can drive the
+      // Phase 3 scheduled refit (which writes tier: plan to the ledger), so
+      // validate it against the accepted set — same guard as --refit.
+      if (values.plan && !ACCEPTED_PLANS.includes(values.plan)) {
+        process.stderr.write(
+          `Invalid --plan value: "${values.plan}". ` +
+            `Accepted: ${ACCEPTED_PLANS.join(" | ")}.\n`,
+        );
+        process.exit(2);
+      }
     }
 
     const { ratesCommand } = await import("../src/cli/rates.mjs");
@@ -189,6 +205,7 @@ switch (command) {
       ledgerFile: values["ledger-file"],
       "dismiss-drift": values["dismiss-drift"],
       driftSeenFile: values["drift-seen-file"],
+      "skip-scheduled-refit": values["skip-scheduled-refit"],
     });
     break;
   }
