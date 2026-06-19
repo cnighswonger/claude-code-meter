@@ -50,11 +50,25 @@ export function ratesCommand(args) {
     return;
   }
 
+  // Phase 3: scheduled-refit cadence gate. Only the default-mode rates
+  // invocation triggers it (not --history/--dismiss-drift/--refit/--by row).
+  // If a refit is due (empty ledger, tier transition, or >=28 days since the
+  // last fit) and the operator supplied the flags a refit needs, run it first,
+  // then continue with the requested output.
+  //
+  // A tier transition (or the first fit for a tier) starts a NEW fit history,
+  // so it must suppress drift detection entirely — including the downstream
+  // pending banner, which would otherwise recompute drift against an OLDER
+  // same-tier fit when the operator switches BACK to a previously-seen tier.
+  // A normal cadence refit (same tier, stale) does NOT suppress the pending
+  // banner — drift detection should run on it.
+  const { suppressPendingBanner } = maybeRunScheduledRefit(rows, args);
+
   // Default-mode rates: surface a pending drift banner above the output if the
   // most-recent fit drifted from its prior same-(tier,model,speed) fit and the
   // operator hasn't dismissed it. See the banner-decision algorithm in the
   // Phase 2 directive section.
-  maybePrintPendingDriftBanner(args);
+  if (!suppressPendingBanner) maybePrintPendingDriftBanner(args);
   runWindowMode(rows, args["tier-start-date"]);
 }
 
@@ -256,7 +270,7 @@ function renderFit(pair, fit, cacheFixLabel) {
 
 const STORAGE_KEYS = ["input", "output", "cache_read", "cache_create"];
 
-function runRefit(rows, args) {
+function runRefit(rows, args, { suppressDrift = false } = {}) {
   const tierStartDate = args["tier-start-date"];
   const filtered = rows.filter((r) => typeof r.ts === "string" && r.ts.slice(0, 10) >= tierStartDate);
   if (filtered.length === 0) {
@@ -320,8 +334,10 @@ function runRefit(rows, args) {
         speed: entry.speed,
       }),
     );
-    const drift = computeDrift(prior, entry);
-    if (drift.drifted) driftBanners.push(driftBannerLines(prior, entry, drift));
+    if (!suppressDrift) {
+      const drift = computeDrift(prior, entry);
+      if (drift.drifted) driftBanners.push(driftBannerLines(prior, entry, drift));
+    }
 
     appendFit(args.ledgerFile, entry);
     appended++;
@@ -445,6 +461,87 @@ function runDismissDrift(args) {
   const current = mostRecentFit(ledger.fits);
   writeDriftSeen(args, current.fit_at);
   console.log(`Dismissed drift warning for the fit at ${current.fit_at}.`);
+}
+
+// -- scheduled refit cadence (Phase 3) ----------------------------------------
+
+const CADENCE_DAYS = 28;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * Phase 3 cadence gate. Runs at the top of the default-mode rates path only.
+ * Triggers a refit-then-continue when:
+ *   - the ledger has no prior fit for this (tier, model, speed) keyspace, OR
+ *   - a tier transition is detected (the operator's --tier-start-date or
+ *     --plan differs from the ledger's most-recent tier_started / tier), OR
+ *   - the most-recent matching fit is >= CADENCE_DAYS old.
+ * Requires both --tier-start-date and --plan (a refit can't run without them);
+ * silently no-ops otherwise. --skip-scheduled-refit is a one-shot opt-out.
+ *
+ * The scheduled refit suppresses its own drift banner. Returns
+ * { suppressPendingBanner }: true means the caller must ALSO skip the
+ * downstream maybePrintPendingDriftBanner (tier transition / first fit start a
+ * new fit history → drift detection stays fully quiet, even against older
+ * same-tier history if the operator switches back to a prior tier). false
+ * means the normal cadence refit ran and the pending banner should print drift
+ * exactly once (Phase 2 reuse).
+ */
+function maybeRunScheduledRefit(rows, args) {
+  const noChange = { suppressPendingBanner: false };
+  if (args["skip-scheduled-refit"]) return noChange;
+
+  const tierStartDate = args["tier-start-date"];
+  const plan = args.plan;
+  // A scheduled refit needs the same inputs an explicit --refit needs. If the
+  // operator didn't supply them, there's nothing to schedule.
+  if (!tierStartDate || !plan) return noChange;
+
+  const ledger = readLedger(args.ledgerFile);
+  const priorForTier = mostRecentFit(filterFits(ledger.fits, { tier: plan }));
+  const priorAny = mostRecentFit(ledger.fits);
+
+  // Tier transition: the operator's plan/tier-start differs from the ledger's
+  // most-recent fit. Reset the cadence — refit immediately, announce, and
+  // suppress drift detection ENTIRELY (own banner + downstream pending banner),
+  // because the transition starts a new fit history. Suppressing the pending
+  // banner is load-bearing for the switch-back case: an older same-tier fit
+  // must not resurface a drift warning on a transition invocation.
+  if (priorAny && (priorAny.tier !== plan || priorAny.tier_started !== tierStartDate)) {
+    const wasTier = priorAny.tier;
+    const wasStart = priorAny.tier_started;
+    console.log(
+      `Tier transition detected (was: ${wasTier} @ ${wasStart}, now: ${plan} @ ${tierStartDate}). ` +
+        "Starting a new fit history.",
+    );
+    runRefit(rows, args, { suppressDrift: true });
+    console.log("");
+    return { suppressPendingBanner: true };
+  }
+
+  // No prior fit for this tier at all (empty ledger) → first scheduled fit.
+  // A new history → suppress the pending banner too (there is nothing to drift
+  // from, so this is belt-and-suspenders, but keeps the "new history" contract
+  // explicit).
+  if (!priorForTier) {
+    console.log("Scheduled refit ran (no prior fit on record). Re-fitting and continuing.");
+    runRefit(rows, args, { suppressDrift: true });
+    console.log("");
+    return { suppressPendingBanner: true };
+  }
+
+  // Cadence window: refit if the most-recent matching fit is stale. This is a
+  // normal refit within the same tier history — drift detection SHOULD run, so
+  // leave the pending banner enabled.
+  const ageDays = (Date.now() - Date.parse(priorForTier.fit_at)) / MS_PER_DAY;
+  if (ageDays >= CADENCE_DAYS) {
+    console.log(
+      `Scheduled refit ran (last fit was ${Math.floor(ageDays)} days ago). ` +
+        "Re-fitting and continuing.",
+    );
+    runRefit(rows, args, { suppressDrift: true });
+    console.log("");
+  }
+  return noChange;
 }
 
 function driftSeenPath(args) {
