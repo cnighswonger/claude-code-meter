@@ -13,6 +13,11 @@
 
 import { parseArgs } from "node:util";
 
+// Accepted --plan values. The ledger's `tier` field is keyed on this set, so
+// `rates --refit` validates against it before persisting (Phase 2's drift
+// comparison joins on the same (tier, model, speed) identity).
+const ACCEPTED_PLANS = ["pro", "max-5x", "max-20x", "api", "unknown"];
+
 const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -143,6 +148,13 @@ switch (command) {
         process.stderr.write(
           "--plan <pro|max-5x|max-20x|api|unknown> is required for --refit " +
             "(populates the ledger's tier field).\n",
+        );
+        process.exit(2);
+      }
+      if (!ACCEPTED_PLANS.includes(values.plan)) {
+        process.stderr.write(
+          `Invalid --plan value: "${values.plan}". ` +
+            `Accepted: ${ACCEPTED_PLANS.join(" | ")}.\n`,
         );
         process.exit(2);
       }

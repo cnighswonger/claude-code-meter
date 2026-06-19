@@ -6,7 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -161,8 +161,33 @@ test("CLI: --refit appends a fit and prints the summary", () => {
     assert.equal(fit.speed, "standard");
     assert.equal(fit.tier_started, "2026-05-23");
     assert.ok(typeof fit.r_squared === "number");
-    assert.ok(fit.weights && typeof fit.weights.cache_create === "number");
+    // Pin the full storage-key contract: the ledger must use the SI-style
+    // short keys, not the JSONL row-field names or the display labels.
+    assert.deepEqual(Object.keys(fit.weights).sort(), ["cache_create", "cache_read", "input", "output"]);
+    for (const k of ["input", "output", "cache_read", "cache_create"]) {
+      assert.equal(typeof fit.weights[k], "number", `weights.${k} should be numeric`);
+    }
     assert.equal(fit.validation.method, "hold-out-most-recent");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("CLI: --refit with an unsupported --plan value exits non-zero before writing the ledger", () => {
+  const dir = mkdtempSync(join(tmpdir(), "ledger-"));
+  const log = join(dir, "log.jsonl");
+  const ledger = join(dir, "history.json");
+  writeFitLog(log);
+  try {
+    const res = spawnSync(
+      process.execPath,
+      [CLI_ENTRY, "rates", "--refit", "--tier-start-date", "2026-05-23", "--plan", "banana", "--log-file", log, "--ledger-file", ledger],
+      { encoding: "utf-8" },
+    );
+    assert.notEqual(res.status, 0);
+    assert.match(res.stderr, /Invalid --plan value: "banana"/);
+    // Nothing should have been persisted under the junk tier.
+    assert.equal(existsSync(ledger), false, "ledger must not be created on an invalid --plan");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
