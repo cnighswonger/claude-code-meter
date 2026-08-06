@@ -4,6 +4,29 @@
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-08-06
+
+**Optional `ttl_tier` + `duration_ms` fields on `MeterRowSchema` for cache-observability cross-check (refs [cnighswonger/claude-code-cache-fix#297](https://github.com/cnighswonger/claude-code-cache-fix/issues/297)).** The cache-fix proxy already computes both values on every request but hasn't been able to emit them without meter accepting the schema addition first — v0.9.0 is that acceptance. Once cache-fix v4.4.0 ships and the operator flips `CACHE_FIX_USAGE_LOG_EXTENDED=on`, `usage.jsonl` rows carry the new fields and downstream consumers (dashboards keyed on `ttl_tier`, cost-per-turn cross-checks keyed on `duration_ms`) populate automatically.
+
+- `ttl_tier` — enum `"5m" | "1h"`, optional. Which Anthropic cache tier the request landed on. Enum-not-string is deliberate: an unknown third tier fails loudly and forces a schema bump rather than storing silently.
+- `duration_ms` — non-negative integer, optional. Time-to-response-start (not to completion — that's the value cache-fix can produce without buffering the SSE stream). A cache-health signal independent of the token accounting: cold-prefix requests are measurably slower than warm.
+
+Both fields are `.optional()`; schema version stays at `v: 1` (additive). Unlike `agent_id`/`agent_id_source`, these two are **independent** — no `.superRefine()` pairing; either may appear alone, both may appear together, either may be absent. A row that carries neither continues to validate (back-compat with any cache-fix version predating v4.4.0).
+
+**Operator attestation contract.** Setting `CACHE_FIX_USAGE_LOG_EXTENDED=on` on the cache-fix proxy IS the operator's attestation that meter v0.9.0+ is installed. Setting it against older meter (v0.8.x) produces rows with unknown keys that the strict-object schema rejects at both ingest chokepoints (`src/log/writer.mjs:68-70` `safeParse → null` silently; `src/ingest/jsonl-tailer.mjs:143-153` `parse → skip` with only a `debug()` line). Same failure mode as the `agent_id` rollout — meter-first, cache-fix-second, never the reverse.
+
+**Observable symptom of an attestation breach.** Same as v0.8.0's `agent_id` symptom: nonzero `skipped=` count in `claude-meter ingest` tick output; under `CLAUDE_METER_DEBUG=1` the skip is logged with the validation error and the row never appears in the dashboard.
+
+**Tests.** 17 new cases in `test/schema-ttl-tier-duration-ms.test.mjs`: back-compat (both absent), `ttl_tier` enum happy paths (`"1h"`, `"5m"`) and discipline (`"1d"` / `""` / `null` / number all reject), `duration_ms` numeric discipline (`0` accepts as boundary, `-1` / `1.5` / `"123"` / `null` all reject), independent presence (each alone, both together — all validate), and strict-object preservation (a valid row + `upstream_status: 200` still rejects because that field was deliberately dropped from the directive per cache-fix Codex R1).
+
+**Directive:** [`docs/directives/usage-row-extended-fields.md`](docs/directives/usage-row-extended-fields.md) (merged as [#42](https://github.com/cnighswonger/claude-code-meter/pull/42), impl as [#44](https://github.com/cnighswonger/claude-code-meter/pull/44)).
+
+---
+
+**Rates history ledger — weight-history capture with drift detection and scheduled refits (issue [#34](https://github.com/cnighswonger/claude-code-meter/issues/34), master directive [#36](https://github.com/cnighswonger/claude-code-meter/pull/36); phases [#37](https://github.com/cnighswonger/claude-code-meter/pull/37), [#39](https://github.com/cnighswonger/claude-code-meter/pull/39), [#40](https://github.com/cnighswonger/claude-code-meter/pull/40)).** Three-phase feature landing across the v0.9.0 window: the ledger append-only writer (Phase 1), drift-detection heuristics on refits (Phase 2), and the scheduled-refit cadence that appends over time (Phase 3). Adds `src/cli/weights-ledger.mjs` (new; append-only JSONL writer for the history file), extends `src/cli/rates.mjs` with `--refit` and `--history` commands (Phase 1), adds cross-fit drift banners at `rates.mjs`'s command boundary (Phase 2), and adds the scheduled-refit cadence that reads the last-fit timestamp and appends a fresh fit when overdue (Phase 3). Phase 4 (public-share endpoint) is directive-locked (#41) but the client implementation is deferred to a later release.
+
+**Rates Q5h-window regression ([#33](https://github.com/cnighswonger/claude-code-meter/issues/33), impl [#35](https://github.com/cnighswonger/claude-code-meter/pull/35)).** Regression at Q5h-window granularity: rates fit at the account-wide granularity previously missed workload phase effects visible only at the 5-hour window level. Now fits per Q5h window with an anonymized 90-window fixture (`test/fixtures/aitl-anonymized-90-windows.json`, 638 lines) exercising the boundary cases.
+
 ## [0.8.0] - 2026-06-13
 
 **Optional `agent_id` + `agent_id_source` fields on `MeterRowSchema` for Workflow-tool subagent attribution (refs [cnighswonger/claude-code-cache-fix#215](https://github.com/cnighswonger/claude-code-cache-fix/issues/215), refs upstream [anthropics/claude-code#66761](https://github.com/anthropics/claude-code/issues/66761)).** Per CC#66761, Claude Code sets the canonical `x-claude-code-agent-id` header on Task/Agent-tool subagents but NOT on Workflow-tool–spawned subagents — operators running fan-out workflows (`agent()`, `parallel()`, `pipeline()`) cannot attribute per-Workflow-leg cost. v0.8.0 adds the two fields the cache-fix proxy needs to emit for that gap to close:
