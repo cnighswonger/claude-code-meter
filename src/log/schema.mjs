@@ -119,6 +119,32 @@ export const MeterRowSchema = z.strictObject({
   agent_id: z.string().max(64).optional(),
   agent_id_source: z.enum(["cc_header", "cache_fix_derived"]).optional(),
 
+  // Extended cache-observability fields (cache-fix v4.4.0+, gated default-off
+  // via CACHE_FIX_USAGE_LOG_EXTENDED=on). Per directive #42 / cache-fix #297.
+  //
+  // Both optional and additive — a row without them stays valid, so producers
+  // predating cache-fix v4.4.0 keep working against a meter carrying this
+  // schema. The env-var on cache-fix is the operator's attestation that
+  // meter is on a version that accepts these keys (this release forward);
+  // an older meter reading a row that carries them fails silently at the
+  // ingest chokepoints (`src/log/writer.mjs:68-70` safeParse→null,
+  // `src/ingest/jsonl-tailer.mjs:143-153` parse→skip). Sequencing is
+  // meter-first, cache-fix-second, same as agent_id v0.8.0.
+  //
+  // - `ttl_tier`: which Anthropic cache tier the request landed on. Enum
+  //   rather than string so an unknown third tier fails loudly and forces
+  //   a schema bump, rather than storing silently and needing archaeology
+  //   later. Source cache-fix side: `ctx.meta._ttlTier` set by
+  //   `ttl-tier-detect.mjs`.
+  //
+  // - `duration_ms`: time-to-response-start (not to completion — that is
+  //   the value cache-fix can produce without buffering the SSE stream).
+  //   A cache-health cross-check that is independent of the token
+  //   accounting: cold-prefix requests are measurably slower than warm.
+  //   Non-negative integer, min(0) admits zero (fast health-check paths).
+  ttl_tier: z.enum(["5m", "1h"]).optional(),
+  duration_ms: z.number().int().min(0).optional(),
+
   // Derived
   cache_hit_rate: z.number().min(0).max(1),
   q5h_delta: z.number(),
