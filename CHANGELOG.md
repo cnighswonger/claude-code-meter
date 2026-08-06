@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-06
+
+**Patch: `analyze --share` crash on long-term users past ~100k rows ([#46](https://github.com/cnighswonger/claude-code-meter/issues/46), fix [#48](https://github.com/cnighswonger/claude-code-meter/pull/48)).** `detectPlanTier` in `src/cli/analyze.mjs` computed `Math.max(...rows.map((r) => r.q5h || 0))` and threw away the result — the spread crashed with `RangeError: Maximum call stack size exceeded` past V8's argument limit (~100k rows). The daily community-share cron on long-term users had been failing on every run since 2026-06-20 (45 consecutive crashes, zero successes in 47 days on the reporting host; independently corroborated by `meter.vsits.co/api/v1/stats` showing `latest: "2026-06-20T06:37:02.700Z"`).
+
+The fix is the two dead lines. `detectPlanTier` returned `"unknown"` unconditionally regardless of the discarded values, so no reduce-rewrite is needed — preserving a computation with no consumer would carry dead code forward. Real plan-tier detection is a feature decision, deliberately not bundled with this crash fix.
+
+Audit for other `Math.max(...)` / `Math.min(...)` spreads over row arrays returned zero remaining matches after this fix (`grep -rnE 'Math\.(max|min)\(\.\.\.' src/ test/`). The size-triggered failure class is removed from the codebase.
+
+**Deploy order.** v0.9.1 is the version to deploy to a meter droplet or install locally on any host that ran the daily share cron against a store ≥100k rows. v0.9.0 still carries the bug; skip it and go straight to v0.9.1.
+
 ## [0.9.0] - 2026-08-06
 
 **Optional `ttl_tier` + `duration_ms` fields on `MeterRowSchema` for cache-observability cross-check (refs [cnighswonger/claude-code-cache-fix#297](https://github.com/cnighswonger/claude-code-cache-fix/issues/297)).** The cache-fix proxy already computes both values on every request but hasn't been able to emit them without meter accepting the schema addition first — v0.9.0 is that acceptance. Once cache-fix v4.4.0 ships and the operator flips `CACHE_FIX_USAGE_LOG_EXTENDED=on`, `usage.jsonl` rows carry the new fields and downstream consumers (dashboards keyed on `ttl_tier`, cost-per-turn cross-checks keyed on `duration_ms`) populate automatically.
