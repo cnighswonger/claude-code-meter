@@ -448,9 +448,6 @@ function fitCumulativeExponent(rows) {
  * Detect plan tier from fallback_pct and quota patterns.
  */
 function detectPlanTier(rows) {
-  // If any row has high q5h values, likely Max
-  const maxQ5h = Math.max(...rows.map((r) => r.q5h || 0));
-  const fallback = rows.find((r) => r.qfallback_pct != null)?.qfallback_pct;
   // Heuristic — can't definitively determine from data alone
   return "unknown";
 }
